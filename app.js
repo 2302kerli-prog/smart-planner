@@ -366,6 +366,19 @@ function startVoiceInput(targetId, onDone) {
 /* ==============================================
    ПЛАН ДНЯ — РАЗВЁРТЫВАНИЕ НА ПОЛНЫЙ ЭКРАН
    ============================================== */
+function navigateDay(direction) {
+    const current = parseDateString(activeDate) || new Date();
+    current.setDate(current.getDate() + direction);
+    activeDate = formatDateLocal(current);
+
+    // Синхронизируем календарь с новой датой
+    calendarYear = current.getFullYear();
+    calendarMonth = current.getMonth();
+
+    renderDailyPlan();
+    setupCalendar();
+}
+
 function togglePlanFullscreen() {
     const dailyBlock = document.getElementById('dailyPlanBlock');
     const goalsContainer = document.getElementById('goalsWidgetContainer');
