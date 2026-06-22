@@ -147,8 +147,18 @@ function buildContext() {
         ? todayTasks.map(t => `• [${t.done ? '✓' : ' '}] ${t.text}`).join('\n')
         : 'Задач на сегодня пока нет';
 
+    const profile = AppData.settings?.userProfile || {};
+    const profileLines = [];
+    if (profile.name)       profileLines.push(`Имя: ${profile.name}`);
+    if (profile.age)        profileLines.push(`Возраст: ${profile.age} лет`);
+    if (profile.occupation) profileLines.push(`Чем занимается: ${profile.occupation}`);
+    if (profile.context)    profileLines.push(`О себе: ${profile.context}`);
+    const profileText = profileLines.length
+        ? `\nПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ:\n${profileLines.join('\n')}`
+        : '';
+
     return `Дата: ${today}
-Выполнено задач сегодня: ${doneTasks} из ${todayTasks.length}
+Выполнено задач сегодня: ${doneTasks} из ${todayTasks.length}${profileText}
 
 ЦЕЛИ:
 ${goalsText || 'Цели не заданы'}

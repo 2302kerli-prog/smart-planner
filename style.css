@@ -24,44 +24,20 @@ html, body {
 
 /* ==============================================
    ДИНАМИЧЕСКИЙ ФОН ПО ПРОЦЕНТУ ВЫПОЛНЕНИЯ
-   0-49%: красный/коралловый | 50-79%: оранжевый/персиковый | 80-100%: зелёный/мятный
-   Градиент идёт от светлого вверху к насыщенному внизу — без серого
+   0-29%: красный/коралловый | 30-49%: оранжевый/персиковый
+   50-79%: жёлтый/тёплый | 80-100%: зелёный/мятный
+   Градиент снизу-вверх 50% экрана, остальное серый D2D6DA
    ============================================== */
-body.theme-red #bg-wrapper {
-    background: linear-gradient(165deg,
-        #ffe0e0 0%,
-        #ffb8b8 25%,
-        #ff8080 55%,
-        #e84040 80%,
-        #c42020 100%);
-}
-body.theme-orange #bg-wrapper {
-    background: linear-gradient(165deg,
-        #fff2e0 0%,
-        #ffd8a8 25%,
-        #ffb060 55%,
-        #f07a20 80%,
-        #d05808 100%);
-}
-body.theme-green #bg-wrapper {
-    background: linear-gradient(165deg,
-        #e4fef0 0%,
-        #a8f4d0 25%,
-        #40d898 55%,
-        #10b870 80%,
-        #088050 100%);
-}
+body.theme-red    #bg-wrapper { background: linear-gradient(0deg, #ee5252 0%, #f9b387 46%, #d2d6da 72%, #d2d6da 100%); }
+body.theme-orange #bg-wrapper { background: linear-gradient(0deg, #ee5252 0%, #f9b387 38%, #d9d9d9 70%, #d2d6da 100%); }
+body.theme-yellow #bg-wrapper { background: linear-gradient(0deg, #ee8152 0%, #f9e887 46%, #d9d9d9 72%, #d2d6da 100%); }
+body.theme-green  #bg-wrapper { background: linear-gradient(0deg, #12b07e 0%, #87f9a4 46%, #d9d9d9 72%, #d2d6da 100%); }
 
-/* Тёмная тема — глубокие, благородные оттенки */
-body.dark-glass.theme-red #bg-wrapper {
-    background: linear-gradient(165deg, #200a0a 0%, #3a1010 40%, #5a1818 70%, #2e0808 100%);
-}
-body.dark-glass.theme-orange #bg-wrapper {
-    background: linear-gradient(165deg, #1a0e04 0%, #3a1e08 40%, #5a2e10 70%, #2e1006 100%);
-}
-body.dark-glass.theme-green #bg-wrapper {
-    background: linear-gradient(165deg, #041410 0%, #082e20 40%, #104830 70%, #062818 100%);
-}
+/* Тёмная тема — гранатовый, тёмный оранжевый, тёмный янтарь, тёмный бирюзовый */
+body.dark-glass.theme-red    #bg-wrapper { background: linear-gradient(0deg, #301012 0%, #16090a 58%, #0b0b0d 100%); }
+body.dark-glass.theme-orange #bg-wrapper { background: linear-gradient(0deg, #3a1909 0%, #1d0f07 58%, #0b0b0d 100%); }
+body.dark-glass.theme-yellow #bg-wrapper { background: linear-gradient(0deg, #3a2c09 0%, #1e1908 58%, #0b0b0d 100%); }
+body.dark-glass.theme-green  #bg-wrapper { background: linear-gradient(0deg, #063128 0%, #061713 58%, #0b0b0d 100%); }
 
 /* ==============================================
    ГЛАССМОРФИЗМ — СВЕТЛАЯ ТЕМА
@@ -193,38 +169,47 @@ body.dark-glass.theme-green #bg-wrapper {
     position: absolute;
     border-radius: 50%;
     filter: blur(8px);
+    /* translate и scale — отдельные CSS-свойства, не конфликтуют между собой */
     animation: floatUp 25s infinite ease-in-out, breathe 6s infinite alternate ease-in-out;
     opacity: 0.8;
     transition: background 1s, box-shadow 1s, margin 0.6s ease-out;
-    will-change: transform, margin;
+    will-change: translate, scale, opacity;
 }
 
-/* Цвета шаров — светлая тема, синхронизированы с фоном */
+/* Цвета шаров — светлая тема */
 body.theme-red .bubble {
-    background: radial-gradient(circle at 30% 30%, rgba(255, 210, 210, 0.92), rgba(220, 60, 60, 0.35));
-    box-shadow: 0 0 45px rgba(220, 60, 60, 0.35), inset 0 0 20px rgba(255, 255, 255, 0.65);
+    background: radial-gradient(circle at 30% 30%, rgba(255, 200, 200, 0.9), rgba(255, 100, 100, 0.3));
+    box-shadow: 0 0 35px rgba(255, 100, 100, 0.4), inset 0 0 15px rgba(255, 255, 255, 0.6);
 }
 body.theme-orange .bubble {
-    background: radial-gradient(circle at 30% 30%, rgba(255, 235, 195, 0.92), rgba(230, 120, 30, 0.35));
-    box-shadow: 0 0 45px rgba(230, 120, 30, 0.35), inset 0 0 20px rgba(255, 255, 255, 0.65);
+    background: radial-gradient(circle at 30% 30%, rgba(255, 230, 190, 0.9), rgba(255, 160, 50, 0.3));
+    box-shadow: 0 0 35px rgba(255, 160, 50, 0.4), inset 0 0 15px rgba(255, 255, 255, 0.6);
+}
+body.theme-yellow .bubble {
+    background: radial-gradient(circle at 30% 30%, rgba(255, 245, 190, 0.9), rgba(238, 129, 82, 0.25));
+    box-shadow: 0 0 35px rgba(249, 232, 135, 0.45), inset 0 0 15px rgba(255, 255, 255, 0.6);
 }
 body.theme-green .bubble {
-    background: radial-gradient(circle at 30% 30%, rgba(200, 255, 230, 0.92), rgba(20, 180, 110, 0.35));
-    box-shadow: 0 0 45px rgba(20, 180, 110, 0.4), inset 0 0 20px rgba(255, 255, 255, 0.65);
+    background: radial-gradient(circle at 30% 30%, rgba(210, 245, 215, 0.9), rgba(60, 180, 80, 0.3));
+    box-shadow: 0 0 35px rgba(60, 180, 80, 0.4), inset 0 0 15px rgba(255, 255, 255, 0.6);
 }
 
-/* Цвета шаров — тёмная тема */
+/* Цвета шаров — тёмная тема (гранатовый, тёмно-оранжевый, янтарный, тёмно-бирюзовый) */
 body.dark-glass.theme-red .bubble {
-    background: radial-gradient(circle at 30% 30%, rgba(140, 40, 40, 0.7), rgba(40, 8, 8, 0.25));
-    box-shadow: 0 0 35px rgba(160, 40, 40, 0.4), inset 0 0 12px rgba(255, 255, 255, 0.12);
+    background: radial-gradient(circle at 30% 30%, rgba(120, 20, 30, 0.7), rgba(30, 5, 8, 0.2));
+    box-shadow: 0 0 30px rgba(130, 20, 30, 0.35), inset 0 0 10px rgba(255, 255, 255, 0.1);
 }
 body.dark-glass.theme-orange .bubble {
-    background: radial-gradient(circle at 30% 30%, rgba(150, 80, 20, 0.7), rgba(50, 20, 5, 0.25));
-    box-shadow: 0 0 35px rgba(160, 80, 20, 0.4), inset 0 0 12px rgba(255, 255, 255, 0.12);
+    background: radial-gradient(circle at 30% 30%, rgba(140, 65, 10, 0.7), rgba(40, 18, 4, 0.2));
+    box-shadow: 0 0 30px rgba(150, 65, 10, 0.35), inset 0 0 10px rgba(255, 255, 255, 0.1);
+}
+body.dark-glass.theme-yellow .bubble {
+    background: radial-gradient(circle at 30% 30%, rgba(130, 100, 15, 0.65), rgba(38, 28, 5, 0.2));
+    box-shadow: 0 0 30px rgba(140, 100, 15, 0.3), inset 0 0 10px rgba(255, 255, 255, 0.1);
 }
 body.dark-glass.theme-green .bubble {
-    background: radial-gradient(circle at 30% 30%, rgba(20, 100, 55, 0.7), rgba(5, 28, 15, 0.25));
-    box-shadow: 0 0 35px rgba(20, 120, 60, 0.4), inset 0 0 12px rgba(255, 255, 255, 0.12);
+    background: radial-gradient(circle at 30% 30%, rgba(15, 85, 55, 0.7), rgba(4, 24, 14, 0.2));
+    box-shadow: 0 0 30px rgba(15, 90, 55, 0.35), inset 0 0 10px rgba(255, 255, 255, 0.1);
 }
 
 .bubble:nth-child(1) { width: 140px; height: 140px; left: 8%; bottom: -180px; animation-duration: 22s; animation-delay: 0s; }
@@ -233,15 +218,17 @@ body.dark-glass.theme-green .bubble {
 .bubble:nth-child(4) { width: 85px; height: 85px; left: 25%; bottom: -100px; animation-duration: 18s; animation-delay: 5s; }
 .bubble:nth-child(5) { width: 125px; height: 125px; left: 60%; bottom: -160px; animation-duration: 25s; animation-delay: 4s; }
 
+/* floatUp использует CSS-свойство translate, breathe — scale.
+   Они не конфликтуют, оба работают одновременно. */
 @keyframes floatUp {
-    0% { transform: translateY(0) scale(1); opacity: 0; }
-    10% { opacity: 0.8; }
-    90% { opacity: 0.8; }
-    100% { transform: translateY(-120vh) scale(0.85); opacity: 0; }
+    0%   { translate: 0 0;       opacity: 0; }
+    8%   {                        opacity: 0.8; }
+    92%  {                        opacity: 0.8; }
+    100% { translate: 0 -120vh;  opacity: 0; }
 }
 @keyframes breathe {
-    0% { transform: scale(1) rotate(0deg); }
-    100% { transform: scale(1.15) rotate(4deg); }
+    0%   { scale: 1; }
+    100% { scale: 1.15; }
 }
 
 /* Уважаем системную настройку "уменьшить движение" — не убираем анимацию совсем,

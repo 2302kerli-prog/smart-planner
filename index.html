@@ -41,15 +41,12 @@
     <div id="mainContainer" class="w-full max-w-md h-full flex flex-col content-layer px-4 pt-6 pb-28">
 
         <!-- ВЕРХНЕЕ МЕНЮ -->
-        <div class="flex justify-between items-center w-3/4 mx-auto mb-4 text-white drop-shadow-md shrink-0">
-            <i data-lucide="calendar" class="w-8 h-8 cursor-pointer active:scale-90 transition-transform" onclick="openPanel('calendarPanel')"></i>
+        <div class="flex justify-between items-center w-4/5 mx-auto mb-4 text-white drop-shadow-md shrink-0">
+            <i data-lucide="user" class="w-8 h-8 cursor-pointer active:scale-90 transition-transform" onclick="openUserProfile()" title="Мой профиль"></i>
             <i data-lucide="clipboard-list" class="w-8 h-8 cursor-pointer active:scale-90 transition-transform" onclick="openPanel('notesPanel')"></i>
             <i data-lucide="book-open" class="w-8 h-8 cursor-pointer active:scale-90 transition-transform" onclick="openPanel('mediaPanel')"></i>
             <i data-lucide="sparkles" class="w-8 h-8 cursor-pointer active:scale-90 transition-transform" onclick="openAiChat()"></i>
-            <div class="flex flex-col items-center cursor-pointer active:scale-90 transition-transform" onclick="openPanel('settingsPanel')" title="Настройки / Профиль">
-                <span id="topProfileEmoji" class="text-base leading-none">👤</span>
-                <i data-lucide="settings" class="w-6 h-6 mt-0.5"></i>
-            </div>
+            <i data-lucide="settings" class="w-8 h-8 cursor-pointer active:scale-90 transition-transform" onclick="openPanel('settingsPanel')" title="Настройки"></i>
         </div>
 
         <!-- БЛОК: МОИ ЦЕЛИ -->
@@ -294,6 +291,46 @@
                 <button onclick="addMediaItem()" class="h-12 w-12 glass-panel flex items-center justify-center text-gray-700 active:scale-90 transition-transform">
                     <i data-lucide="plus" class="w-6 h-6"></i>
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ЭКРАН: МОЙ ПРОФИЛЬ (данные для ИИ) -->
+    <div id="userProfilePanel" class="slide-panel w-full max-w-md px-4 pb-4">
+        <div class="glass-panel h-full w-full p-5 flex flex-col">
+            <div class="flex justify-between items-center mb-6 shrink-0">
+                <h3 class="text-3xl font-bold text-gray-800 handwriting">Мой профиль</h3>
+                <i data-lucide="x" class="w-8 h-8 cursor-pointer text-gray-600 active:scale-75" onclick="closePanel('userProfilePanel')"></i>
+            </div>
+
+            <div class="space-y-4 flex-1 overflow-y-auto pr-1">
+                <p class="text-sm text-gray-500 leading-relaxed">Расскажите о себе — ИИ будет учитывать это при каждом разговоре, подстраиваться под ваш стиль и лучше понимать контекст.</p>
+
+                <div class="glass-panel p-4 space-y-4">
+                    <div>
+                        <label class="text-xs font-semibold text-gray-600 uppercase tracking-wider block mb-1">Имя <span class="text-red-400">*</span></label>
+                        <input type="text" id="profileNameInput" class="glass-panel w-full h-12 px-4 text-gray-800 outline-none" placeholder="Как вас зовут?">
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold text-gray-600 uppercase tracking-wider block mb-1">Возраст <span class="text-red-400">*</span></label>
+                        <input type="number" id="profileAgeInput" min="1" max="120" class="glass-panel w-full h-12 px-4 text-gray-800 outline-none" placeholder="Ваш возраст">
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold text-gray-600 uppercase tracking-wider block mb-1">Чем занимаетесь</label>
+                        <input type="text" id="profileOccupationInput" class="glass-panel w-full h-12 px-4 text-gray-800 outline-none" placeholder="Профессия, роль, сфера...">
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold text-gray-600 uppercase tracking-wider block mb-1">О себе — контекст для ИИ</label>
+                        <textarea id="profileContextInput" rows="4" class="glass-panel w-full p-4 text-sm text-gray-800 outline-none resize-none" placeholder="Например: мама двоих детей, мало времени утром. Предпочитаю короткие ответы. Учу итальянский. Занимаюсь йогой..."></textarea>
+                    </div>
+
+                    <button onclick="saveUserProfile()" class="w-full h-12 bg-teal-500 rounded-2xl text-white font-bold active:scale-95 transition-transform text-sm">
+                        Сохранить
+                    </button>
+                </div>
             </div>
         </div>
     </div>

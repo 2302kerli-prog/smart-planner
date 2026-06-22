@@ -251,9 +251,10 @@ function resetAllData() {
    ============================================== */
 function updateThemeBasedOnProgress(percent) {
     const body = document.body;
-    body.classList.remove('theme-red', 'theme-orange', 'theme-green');
-    if (percent < 50)      body.classList.add('theme-red');
-    else if (percent < 80) body.classList.add('theme-orange');
+    body.classList.remove('theme-red', 'theme-orange', 'theme-yellow', 'theme-green');
+    if (percent < 30)      body.classList.add('theme-red');
+    else if (percent < 50) body.classList.add('theme-orange');
+    else if (percent < 80) body.classList.add('theme-yellow');
     else                   body.classList.add('theme-green');
 }
 
@@ -2245,4 +2246,46 @@ function confirmDeleteProfile(profileId) {
             }
         }
     });
+}
+
+/* ==============================================
+   ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ (данные для ИИ)
+   ============================================== */
+function openUserProfile() {
+    const p = AppData.settings.userProfile || {};
+    const nameEl       = document.getElementById('profileNameInput');
+    const ageEl        = document.getElementById('profileAgeInput');
+    const occupEl      = document.getElementById('profileOccupationInput');
+    const contextEl    = document.getElementById('profileContextInput');
+    if (nameEl)    nameEl.value    = p.name       || '';
+    if (ageEl)     ageEl.value     = p.age        || '';
+    if (occupEl)   occupEl.value   = p.occupation || '';
+    if (contextEl) contextEl.value = p.context    || '';
+    openPanel('userProfilePanel');
+}
+
+function saveUserProfile() {
+    const name     = document.getElementById('profileNameInput')?.value.trim();
+    const age      = document.getElementById('profileAgeInput')?.value.trim();
+    const occupEl  = document.getElementById('profileOccupationInput');
+    const ctxEl    = document.getElementById('profileContextInput');
+
+    if (!name || !age) {
+        showAppDialog({
+            title: 'Заполните обязательные поля',
+            message: 'Имя и возраст обязательны — они помогают ИИ правильно к вам обращаться.',
+            confirmText: 'Понятно',
+            cancelText: null
+        });
+        return;
+    }
+
+    AppData.settings.userProfile = {
+        name,
+        age,
+        occupation: occupEl?.value.trim() || '',
+        context:    ctxEl?.value.trim()   || ''
+    };
+    saveDb();
+    closePanel('userProfilePanel');
 }
