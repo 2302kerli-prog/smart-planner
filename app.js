@@ -2425,10 +2425,10 @@ function openUserProfile() {
 
     // Заполняем данные для ИИ
     const p = AppData.settings.userProfile || {};
-    const nameEl    = document.getElementById('profileNameInput');
-    const ageEl     = document.getElementById('profileAgeInput');
-    const occupEl   = document.getElementById('profileOccupationInput');
-    const contextEl = document.getElementById('profileContextInput');
+    const nameEl    = document.getElementById('upNameInput');
+    const ageEl     = document.getElementById('upAgeInput');
+    const occupEl   = document.getElementById('upOccupationInput');
+    const contextEl = document.getElementById('upContextInput');
     if (nameEl)    nameEl.value    = p.name       || '';
     if (ageEl)     ageEl.value     = p.age        || '';
     if (occupEl)   occupEl.value   = p.occupation || '';
@@ -2437,10 +2437,10 @@ function openUserProfile() {
 }
 
 function saveUserProfile() {
-    const name     = document.getElementById('profileNameInput')?.value.trim();
-    const age      = document.getElementById('profileAgeInput')?.value.trim();
-    const occupEl  = document.getElementById('profileOccupationInput');
-    const ctxEl    = document.getElementById('profileContextInput');
+    const name     = document.getElementById('upNameInput')?.value.trim();
+    const age      = document.getElementById('upAgeInput')?.value.trim();
+    const occupEl  = document.getElementById('upOccupationInput');
+    const ctxEl    = document.getElementById('upContextInput');
 
     if (!name || !age) {
         showAppDialog({
