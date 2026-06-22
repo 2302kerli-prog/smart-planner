@@ -47,8 +47,9 @@ async function setupPushNotifications() {
         throw new Error('Push-уведомления не поддерживаются в этом браузере');
     }
 
-    // Регистрируем service worker
-    const registration = await navigator.serviceWorker.register('/service-worker.js');
+    // Регистрируем service worker — путь относительный, работает в любой подпапке
+    const swPath = new URL('service-worker.js', window.location.href).pathname;
+    const registration = await navigator.serviceWorker.register(swPath);
     console.log('[Push] Service Worker зарегистрирован');
 
     // Запрашиваем разрешение
