@@ -1826,16 +1826,13 @@ async function sendChatMessage() {
         // Выполняем команды (добавление задач и заметок)
         const added = executeAIActions(actions);
         if (added.length > 0) {
-            added.forEach(item => {
-                if (item.type === 'task') {
-                    const dateLabel = formatDateForUser(item.date);
-                    addMessage('assistant', `✅ Добавила в план на ${dateLabel}: "${item.text}"`);
-                } else if (item.type === 'note') {
-                    addMessage('assistant', `📝 Записала в заметки (раздел "${item.folder}"): "${item.text}"`);
-                } else if (item.type === 'microtask') {
-                    addMessage('assistant', `🎯 Добавила шаг в цель "${item.goalTitle}": "${item.text}"`);
-                }
-            });
+            const lines = added.map(item => {
+                if (item.type === 'task')      return `✅ В план на ${formatDateForUser(item.date)}: "${item.text}"`;
+                if (item.type === 'note')      return `📝 В заметки (${item.folder}): "${item.text}"`;
+                if (item.type === 'microtask') return `🎯 Шаг в цель "${item.goalTitle}": "${item.text}"`;
+                return '';
+            }).filter(Boolean);
+            if (lines.length) addMessage('assistant', lines.join('\n'));
             document.getElementById('suggestionsZone')?.classList.add('hidden');
         }
 

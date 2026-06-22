@@ -161,13 +161,16 @@ ${todayText}`;
 async function sendToAI(userMessage, chatHistory = []) {
     const context = buildContext();
 
+    const clientDate = typeof activeDate !== 'undefined' ? activeDate : new Date().toISOString().split('T')[0];
+
     return serverRequest('/ai/chat', {
         method: 'POST',
         body: JSON.stringify({
             context,
             messages: chatHistory,
             userMessage,
-            customPrompt: localStorage.getItem('custom_prompt') || ''
+            customPrompt: localStorage.getItem('custom_prompt') || '',
+            clientDate
         })
     });
 }
