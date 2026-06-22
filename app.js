@@ -367,73 +367,140 @@ function closeAppDialog() {
    ГОЛОСОВОЙ ВВОД (Web Speech API)
    ============================================== */
 let activeRecognition = null;
+let voiceTargetId     = null; // ID поля, куда пишем сейчас
 
 function autoResizeTextarea(el) {
     el.style.height = 'auto';
     el.style.height = Math.min(el.scrollHeight, 160) + 'px';
 }
 
+// Добавляем базовую пунктуацию к готовому тексту
+function addAutoPunctuation(text) {
+    if (!text) return text;
+    let t = text.trim();
+    t = t.charAt(0).toUpperCase() + t.slice(1);
+    if (!/[.!?,;:…]$/.test(t)) t += '.';
+    return t;
+}
+
+// Обновляем визуал всех mic-кнопок связанных с targetId
+function setMicVisual(targetId, active) {
+    const mainBtn = document.getElementById('micBtn');
+
+    // Inline mic в textInputWrapper (для aiTaskInput)
+    const inlineMic = document.querySelector('#textInputWrapper button[onclick*="startVoiceInput"]');
+
+    // Mic в панели чата
+    const chatMic = document.querySelector('#aiChatPanel button[onclick*="startVoiceInput"]');
+
+    // Mic в ручном вводе задачи
+    const taskMic = document.querySelector('button[onclick*="startVoiceInput(\'manualTaskInput\')"]');
+
+    if (targetId === 'aiTaskInput') {
+        mainBtn?.classList.toggle('mic-recording', active);
+        inlineMic?.classList.toggle('mic-btn-inline-recording', active);
+    } else if (targetId === 'chatInput') {
+        chatMic?.classList.toggle('mic-btn-inline-recording', active);
+    } else if (targetId === 'manualTaskInput') {
+        taskMic?.classList.toggle('mic-btn-inline-recording', active);
+    }
+}
+
+function stopVoiceInput() {
+    if (activeRecognition) {
+        activeRecognition._manualStop = true;
+        activeRecognition.stop();
+    }
+}
+
 function startVoiceInput(targetId, onDone) {
     const target = document.getElementById(targetId);
     if (!target) return;
+
+    // Повторное нажатие = остановка записи
+    if (voiceTargetId === targetId && activeRecognition) {
+        stopVoiceInput();
+        return;
+    }
+
+    // Остановить предыдущую запись если была другая
+    if (activeRecognition) { activeRecognition._manualStop = true; activeRecognition.stop(); }
+
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
         showAppDialog({
             title: 'Голос недоступен',
-            message: 'Браузер сейчас не дает доступ к распознаванию речи. Можно ввести текст вручную.',
+            message: 'Браузер не поддерживает распознавание речи. Введите текст вручную.',
             confirmText: 'Понятно'
         });
         return;
     }
-    if (activeRecognition) {
-        activeRecognition.stop();
-        activeRecognition = null;
-    }
-    const recognition = new SpeechRecognition();
-    activeRecognition = recognition;
-    recognition.lang = 'ru-RU';
-    recognition.interimResults = true;
-    recognition.maxAlternatives = 1;
-    recognition.continuous = false;
-    target.classList.add('voice-listening');
 
-    const baseText = target.value; // текст до начала диктовки
-    let finalText = '';             // накопленный финальный текст
+    voiceTargetId = targetId;
+    const baseText  = target.value;
+    let   finalText = '';
 
-    recognition.onresult = (event) => {
-        let interim = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-            const t = event.results[i][0].transcript;
-            if (event.results[i].isFinal) {
-                finalText += (finalText ? ' ' : '') + t;
-            } else {
-                interim += t;
+    function createAndStart() {
+        const r = new SpeechRecognition();
+        activeRecognition = r;
+        r.lang            = 'ru-RU';
+        r.interimResults  = true;
+        r.maxAlternatives = 1;
+        r.continuous      = true;  // не останавливаться на паузах
+
+        target.classList.add('voice-listening');
+        setMicVisual(targetId, true);
+
+        r.onresult = (event) => {
+            let interim = '';
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+                const t = event.results[i][0].transcript;
+                if (event.results[i].isFinal) {
+                    finalText += (finalText ? ' ' : '') + t;
+                } else {
+                    interim += t;
+                }
             }
-        }
-        const sep = baseText.trim() ? ' ' : '';
-        const preview = (finalText + (finalText && interim ? ' ' : '') + interim).trim();
-        target.value = baseText + (preview ? sep + preview : '');
-        if (target.tagName === 'TEXTAREA') autoResizeTextarea(target);
-    };
+            const sep     = baseText.trim() ? ' ' : '';
+            const preview = (finalText + (finalText && interim ? ' ' : '') + interim).trim();
+            target.value  = baseText + (preview ? sep + preview : '');
+            if (target.tagName === 'TEXTAREA') autoResizeTextarea(target);
+        };
 
-    recognition.onerror = (e) => {
-        if (e.error === 'no-speech') return; // тишина — не ошибка
-        showAppDialog({
-            title: 'Не расслышала',
-            message: 'Попробуйте ещё раз или введите текст вручную.',
-            confirmText: 'Ок'
-        });
-    };
-    recognition.onend = () => {
-        target.classList.remove('voice-listening');
-        activeRecognition = null;
-        // Убираем промежуточный текст — оставляем только финальный
-        const sep = baseText.trim() && finalText ? ' ' : '';
-        target.value = baseText + sep + finalText;
-        if (target.tagName === 'TEXTAREA') autoResizeTextarea(target);
-        onDone?.(finalText);
-    };
-    recognition.start();
+        r.onerror = (e) => {
+            if (e.error === 'no-speech' || e.error === 'aborted') return;
+            setMicVisual(targetId, false);
+            target.classList.remove('voice-listening');
+            voiceTargetId     = null;
+            activeRecognition = null;
+        };
+
+        r.onend = () => {
+            // Если остановили вручную — завершаем
+            if (r._manualStop || voiceTargetId !== targetId) {
+                target.classList.remove('voice-listening');
+                setMicVisual(targetId, false);
+                voiceTargetId     = null;
+                activeRecognition = null;
+                // Финальный текст с пунктуацией
+                const sep = baseText.trim() && finalText ? ' ' : '';
+                target.value = baseText + sep + addAutoPunctuation(finalText);
+                if (target.tagName === 'TEXTAREA') autoResizeTextarea(target);
+                onDone?.(finalText);
+            } else {
+                // iOS / браузер прервал сам — перезапускаем автоматически
+                try { createAndStart(); } catch (_) {
+                    target.classList.remove('voice-listening');
+                    setMicVisual(targetId, false);
+                    voiceTargetId = null;
+                }
+            }
+        };
+
+        try { r.start(); } catch (_) {}
+    }
+
+    createAndStart();
 }
 
 /* ==============================================

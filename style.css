@@ -310,9 +310,32 @@ body.dark-glass.theme-green .bubble {
 #foldersList::-webkit-scrollbar { display: none; }
 .folder-pill { position: relative; }
 
-/* Индикатор активной записи голоса */
+/* Индикатор активной записи голоса (поле ввода) */
 .voice-listening {
-    box-shadow: 0 0 0 3px rgba(20,184,166,0.25), 0 0 20px rgba(20,184,166,0.35) !important;
+    box-shadow: 0 0 0 3px rgba(239,68,68,0.3), 0 0 20px rgba(239,68,68,0.25) !important;
+}
+
+/* Микрофон в режиме записи */
+.mic-recording {
+    background: rgba(239, 68, 68, 0.55) !important;
+    border-color: rgba(255, 100, 100, 0.9) !important;
+    animation: mic-pulse 1.4s ease-in-out infinite !important;
+}
+
+@keyframes mic-pulse {
+    0%   { box-shadow: 0 0 0 0   rgba(239,68,68,0.6), inset 0 0 15px rgba(255,255,255,0.3); }
+    50%  { box-shadow: 0 0 0 16px rgba(239,68,68,0),  inset 0 0 20px rgba(255,255,255,0.5); }
+    100% { box-shadow: 0 0 0 0   rgba(239,68,68,0),   inset 0 0 15px rgba(255,255,255,0.3); }
+}
+
+/* Встроенная кнопка микрофона в режиме записи */
+.mic-btn-inline-recording {
+    color: #ef4444 !important;
+    animation: inline-mic-blink 1s ease-in-out infinite !important;
+}
+@keyframes inline-mic-blink {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.4; }
 }
 
 /* Выделение текста — разрешаем везде кроме кнопок и иконок */
