@@ -1510,3 +1510,366 @@ async function testPush() {
         showAppDialog({ title: 'Ошибка', message: err.message, confirmText: 'Ок' });
     }
 }
+
+/* ==============================================
+   ИИ-ЧАТ — ЛОГИКА И РЕНДЕР
+   ============================================== */
+const CHAT_STORAGE_KEY = 'smart_planner_chat';
+let chatHistory = [];
+let isVoiceReplyEnabled = false;
+let isSpeaking = false;
+let pendingSuggestions = [];
+
+// Загружаем историю чата из localStorage
+function loadChatHistory() {
+    try {
+        const saved = localStorage.getItem(CHAT_STORAGE_KEY);
+        chatHistory = saved ? JSON.parse(saved) : [];
+    } catch {
+        chatHistory = [];
+    }
+}
+
+// Сохраняем историю чата
+function saveChatHistory() {
+    // Храним максимум 100 сообщений чтобы не переполнить localStorage
+    if (chatHistory.length > 100) chatHistory = chatHistory.slice(-100);
+    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(chatHistory));
+}
+
+// Форматируем время сообщения
+function formatMessageTime(isoString) {
+    const date = new Date(isoString);
+    return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+}
+
+// Добавляем сообщение в историю и рендерим
+function addMessage(role, content, time = new Date().toISOString()) {
+    const message = { role, content, time };
+    chatHistory.push(message);
+    saveChatHistory();
+    renderMessage(message);
+    scrollChatToBottom();
+}
+
+// Рендерим одно сообщение
+function renderMessage(message) {
+    const container = document.getElementById('chatMessages');
+    if (!container) return;
+
+    // Убираем приветствие-заглушку если оно есть
+    const placeholder = container.querySelector('.chat-placeholder');
+    if (placeholder) placeholder.remove();
+
+    const wrapper = document.createElement('div');
+    wrapper.className = message.role === 'user' ? 'flex justify-end' : 'flex justify-start';
+
+    const isUser = message.role === 'user';
+    wrapper.innerHTML = `
+        <div>
+            <div class="${isUser ? 'chat-bubble-user' : 'chat-bubble-ai'}">${escapeHtml(message.content)}</div>
+            <div class="chat-time ${isUser ? 'text-right' : 'text-left'}">${formatMessageTime(message.time)}</div>
+        </div>
+    `;
+    container.appendChild(wrapper);
+}
+
+// Рендерим всю историю чата
+function renderChatHistory() {
+    const container = document.getElementById('chatMessages');
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    if (chatHistory.length === 0) {
+        container.innerHTML = `
+            <div class="chat-placeholder text-center py-16 text-gray-500">
+                <div class="text-5xl mb-4">✨</div>
+                <p class="text-sm font-medium">Привет! Я ваш личный помощник.</p>
+                <p class="text-xs mt-2 opacity-70">Спросите про план дня, цели или просто поговорим.</p>
+            </div>
+        `;
+        return;
+    }
+
+    chatHistory.forEach(renderMessage);
+    scrollChatToBottom();
+}
+
+// Скролл вниз
+function scrollChatToBottom() {
+    const container = document.getElementById('chatMessages');
+    if (container) container.scrollTop = container.scrollHeight;
+}
+
+// Показываем индикатор печатания
+function showTypingIndicator() {
+    const container = document.getElementById('chatMessages');
+    if (!container) return;
+
+    const indicator = document.createElement('div');
+    indicator.id = 'typingIndicator';
+    indicator.className = 'flex justify-start';
+    indicator.innerHTML = `
+        <div class="chat-bubble-ai">
+            <div class="typing-indicator">
+                <span></span><span></span><span></span>
+            </div>
+        </div>
+    `;
+    container.appendChild(indicator);
+    scrollChatToBottom();
+}
+
+// Убираем индикатор печатания
+function hideTypingIndicator() {
+    document.getElementById('typingIndicator')?.remove();
+}
+
+// Отправка сообщения в чат
+async function sendChatMessage() {
+    const input = document.getElementById('chatInput');
+    const text = input?.value.trim();
+    if (!text) return;
+
+    const serverUrl = localStorage.getItem('server_url');
+    if (!serverUrl) {
+        showAppDialog({
+            title: 'Сервер не настроен',
+            message: 'Укажите адрес сервера в Настройках, чтобы использовать ИИ-помощника.',
+            confirmText: 'Открыть настройки',
+            onConfirm: () => openPanel('settingsPanel')
+        });
+        return;
+    }
+
+    input.value = '';
+    addMessage('user', text);
+
+    // Показываем что ИИ печатает
+    const statusEl = document.getElementById('aiStatusText');
+    if (statusEl) statusEl.innerText = 'Думает...';
+    showTypingIndicator();
+
+    try {
+        // Отправляем историю для контекста (последние 10 сообщений)
+        const recentHistory = chatHistory.slice(-10).map(m => ({
+            role: m.role,
+            content: m.content
+        }));
+
+        const result = await sendToAI(text, recentHistory);
+        hideTypingIndicator();
+
+        const reply = result.reply || 'Не удалось получить ответ';
+        addMessage('assistant', reply);
+
+        if (statusEl) statusEl.innerText = 'Готов помочь';
+
+        // Озвучиваем если включён голосовой режим
+        if (isVoiceReplyEnabled) speakText(reply);
+
+        // Ищем предложения задач в ответе
+        parseSuggestions(reply);
+
+    } catch (err) {
+        hideTypingIndicator();
+        if (statusEl) statusEl.innerText = 'Ошибка соединения';
+        addMessage('assistant', `Не удалось связаться с сервером: ${err.message}. Проверьте настройки подключения.`);
+    }
+}
+
+// Ищем в ответе ИИ предложения задач (паттерн: строки начинающиеся с •, -, или цифры+точки)
+function parseSuggestions(text) {
+    const lines = text.split('\n');
+    const suggestions = [];
+
+    lines.forEach(line => {
+        const cleaned = line.replace(/^[\s•\-\*\d\.]+/, '').trim();
+        if (cleaned.length > 5 && cleaned.length < 100) {
+            const lowerLine = line.toLowerCase();
+            // Ищем строки которые похожи на задачи
+            if (line.match(/^[\s]*[•\-\*]/) || line.match(/^[\s]*\d+[\.\)]/)) {
+                suggestions.push(cleaned);
+            }
+        }
+    });
+
+    if (suggestions.length > 0) {
+        showSuggestions(suggestions);
+    }
+}
+
+// Показываем карточки предложений
+function showSuggestions(suggestions) {
+    pendingSuggestions = suggestions;
+    const zone = document.getElementById('suggestionsZone');
+    const list = document.getElementById('suggestionsList');
+    if (!zone || !list) return;
+
+    list.innerHTML = '';
+    suggestions.forEach((text, index) => {
+        const card = document.createElement('div');
+        card.className = 'suggestion-card';
+        card.id = `suggestion-${index}`;
+        card.innerHTML = `
+            <span class="text-sm text-gray-800 flex-1">${escapeHtml(text)}</span>
+            <div class="flex gap-2 shrink-0">
+                <button class="px-3 py-1 bg-teal-500/20 text-teal-700 rounded-full text-xs font-bold active:scale-90 transition-transform hover:bg-teal-500/30">
+                    + В план
+                </button>
+                <button class="px-2 py-1 text-gray-400 rounded-full text-xs active:scale-90 transition-transform hover:text-gray-600">
+                    ✕
+                </button>
+            </div>
+        `;
+        card.querySelector('button:first-of-type').addEventListener('click', () => acceptSuggestion(index, text));
+        card.querySelector('button:last-of-type').addEventListener('click', () => dismissSuggestion(index));
+        list.appendChild(card);
+    });
+
+    zone.classList.remove('hidden');
+}
+
+// Принять предложение — добавить в план дня
+function acceptSuggestion(index, text) {
+    if (!AppData.tasksByDate[activeDate]) AppData.tasksByDate[activeDate] = [];
+    AppData.tasksByDate[activeDate].push({ id: createId(), text, done: false });
+    saveDb();
+    renderDailyPlan();
+    setupCalendar();
+
+    // Визуально помечаем карточку как принятую
+    const card = document.getElementById(`suggestion-${index}`);
+    if (card) {
+        card.classList.add('accepted');
+        card.querySelector('button:first-of-type').innerText = '✓ Добавлено';
+    }
+
+    // Сообщаем ИИ что задача принята
+    addMessage('assistant', `✅ Добавила в план: "${text}"`);
+}
+
+// Отклонить предложение
+function dismissSuggestion(index) {
+    const card = document.getElementById(`suggestion-${index}`);
+    if (card) card.remove();
+
+    // Если все карточки убраны — скрываем зону
+    const list = document.getElementById('suggestionsList');
+    if (list && list.children.length === 0) {
+        document.getElementById('suggestionsZone')?.classList.add('hidden');
+    }
+}
+
+// Голосовой ответ ИИ (SpeechSynthesis)
+function speakText(text) {
+    if (!('speechSynthesis' in window)) return;
+    if (isSpeaking) window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'ru-RU';
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+
+    // Пробуем найти русский голос
+    const voices = window.speechSynthesis.getVoices();
+    const ruVoice = voices.find(v => v.lang.startsWith('ru'));
+    if (ruVoice) utterance.voice = ruVoice;
+
+    utterance.onstart = () => { isSpeaking = true; };
+    utterance.onend = () => { isSpeaking = false; };
+    utterance.onerror = () => { isSpeaking = false; };
+
+    window.speechSynthesis.speak(utterance);
+}
+
+// Переключатель голосового ответа
+function toggleVoiceReply() {
+    isVoiceReplyEnabled = !isVoiceReplyEnabled;
+    const btn = document.getElementById('voiceReplyBtn');
+    if (!btn) return;
+
+    if (isVoiceReplyEnabled) {
+        btn.innerHTML = '<i data-lucide="volume-2" class="w-5 h-5 text-teal-500"></i>';
+        btn.title = 'Голосовой ответ включён';
+    } else {
+        btn.innerHTML = '<i data-lucide="volume-x" class="w-5 h-5"></i>';
+        btn.title = 'Голосовой ответ выключен';
+        if (isSpeaking) window.speechSynthesis.cancel();
+    }
+    lucide.createIcons();
+}
+
+// Открываем чат — загружаем историю и при первом открытии запрашиваем план
+function openAiChat() {
+    loadChatHistory();
+    renderChatHistory();
+    openPanel('aiChatPanel');
+
+    // Если история пуста — приветствие с анализом целей
+    if (chatHistory.length === 0) {
+        setTimeout(() => greetUser(), 600);
+    }
+
+    // Фокус на поле ввода
+    setTimeout(() => document.getElementById('chatInput')?.focus(), 400);
+}
+
+// Автоматическое приветствие при первом открытии
+async function greetUser() {
+    const serverUrl = localStorage.getItem('server_url');
+    if (!serverUrl) {
+        addMessage('assistant', 'Привет! 👋 Я ваш личный планировщик-помощник. Для начала работы укажите адрес сервера в Настройках — это займёт минуту.');
+        return;
+    }
+
+    const statusEl = document.getElementById('aiStatusText');
+    if (statusEl) statusEl.innerText = 'Анализирую ваши цели...';
+    showTypingIndicator();
+
+    try {
+        const result = await sendToAI(
+            'Поздоровайся и кратко проанализируй мои текущие цели и план на сегодня. Если есть задачи на сегодня — похвали за активность. Если плана нет — предложи 2-3 конкретных шага по ближайшей цели с дедлайном. Будь краткой и дружелюбной.',
+            []
+        );
+        hideTypingIndicator();
+        const reply = result.reply || 'Привет! Готова помочь с планированием.';
+        addMessage('assistant', reply);
+        if (statusEl) statusEl.innerText = 'Готов помочь';
+        if (isVoiceReplyEnabled) speakText(reply);
+        parseSuggestions(reply);
+    } catch {
+        hideTypingIndicator();
+        addMessage('assistant', 'Привет! 👋 Готова помочь с планированием. Что делаем сегодня?');
+        if (statusEl) statusEl.innerText = 'Готов помочь';
+    }
+}
+
+// Переопределяем старую функцию отправки ИИ-запроса —
+// теперь она открывает чат вместо модала
+sendAiRequest = function sendAiRequestNew() {
+    const input = document.getElementById('aiTaskInput');
+    const val = input?.value.trim();
+    input && (input.value = '');
+    collapseToMicOnly();
+    openAiChat();
+
+    // Если был текст — сразу отправляем его
+    if (val) {
+        setTimeout(() => {
+            const chatInput = document.getElementById('chatInput');
+            if (chatInput) {
+                chatInput.value = val;
+                sendChatMessage();
+            }
+        }, 400);
+    }
+}
+
+// Enter в поле чата
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('chatInput')?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') sendChatMessage();
+    });
+});
