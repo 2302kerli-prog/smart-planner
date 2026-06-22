@@ -1,1930 +1,439 @@
-'use strict';
-
 /* ==============================================
-   УТИЛИТЫ
+   БАЗОВЫЕ НАСТРОЙКИ СТРАНИЦЫ
    ============================================== */
-const createId = () => Date.now() + Math.floor(Math.random() * 1000);
-
-const escapeHtml = (value) => String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-
-function parseDateString(value) {
-    if (!value) return null;
-    const [year, month, day] = value.split('-').map(Number);
-    if (!year || !month || !day) return null;
-    return new Date(year, month - 1, day);
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    font-family: 'Montserrat', sans-serif;
+    position: relative;
 }
 
-function formatDateLocal(date) {
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-}
+.handwriting { font-family: 'Caveat', cursive; }
 
-function getTodayString() {
-    return formatDateLocal(new Date());
+/* Изолированная подложка фона и шаров */
+#bg-wrapper {
+    position: fixed;
+    inset: 0;
+    z-index: -10;
+    pointer-events: none;
+    transition: background 0.8s ease-in-out;
 }
 
 /* ==============================================
-   СОСТОЯНИЕ ПРИЛОЖЕНИЯ
-   (selectedGoalId объявлен заранее — normalizeAppData() ниже уже на него ссылается)
-   ============================================== */
-let selectedGoalId = null;
-
-/* ==============================================
-   БАЗА ДАННЫХ В LOCALSTORAGE
-   ============================================== */
-const STORAGE_KEY = 'smart_planner_db';
-
-const DEFAULT_DATA = {
-    settings: {
-        darkGlass: false,
-        apiKey: ''
-    },
-    goals: [
-        { id: 1, title: 'Запустить школу в сентябре', deadline: '2026-09-01', microtasks: [
-            { id: 101, text: 'Подготовить план занятий', done: true },
-            { id: 102, text: 'Запустить форму записи', done: false },
-            { id: 103, text: 'Провести вебинар', done: false }
-        ]},
-        { id: 2, title: 'Сдать экзамены', deadline: '2026-07-01', microtasks: [
-            { id: 201, text: 'Выучить 40 билетов', done: true },
-            { id: 202, text: 'Решить тесты', done: false }
-        ]},
-        { id: 3, title: 'Вылечить зубы', deadline: '2026-10-01', microtasks: [
-            { id: 301, text: 'Сходить на консультацию', done: false },
-            { id: 302, text: 'Полечить кариес', done: false }
-        ]}
-    ],
-    tasksByDate: {},
-    notesFolders: [
-        { id: 'school', name: 'Школа', notes: [{ id: 1, title: 'Список билетов', text: '1. Основы ИИ\n2. Логика и базы данных\n3. CSS Магия', done: false }] },
-        { id: 'work', name: 'Работа', notes: [] },
-        { id: 'home', name: 'Дом', notes: [{ id: 2, title: 'Покупки', text: 'Светильник розового цвета (Икеа)', done: false }] }
-    ],
-    media: {
-        books: [{ id: 1, title: 'Атлант расправил плечи' }],
-        movies: [{ id: 2, title: 'Интерстеллар' }],
-        series: [{ id: 3, title: 'Черное зеркало' }]
-    }
-};
-
-function normalizeAppData(data) {
-    const normalized = data || {};
-    normalized.settings = { darkGlass: false, apiKey: '', ...(normalized.settings || {}) };
-    normalized.tasksByDate = normalized.tasksByDate || {};
-    normalized.notesFolders = Array.isArray(normalized.notesFolders) ? normalized.notesFolders : [];
-    normalized.media = { books: [], movies: [], series: [], ...(normalized.media || {}) };
-    ['books', 'movies', 'series'].forEach((tab) => {
-        if (!Array.isArray(normalized.media[tab])) normalized.media[tab] = [];
-    });
-    normalized.goals = Array.isArray(normalized.goals) ? normalized.goals : [];
-    normalized.goals.forEach((goal) => {
-        if (!Array.isArray(goal.microtasks)) goal.microtasks = [];
-        updateGoalStatus(goal);
-    });
-    normalized.notesFolders.forEach((folder) => {
-        if (!folder.id) folder.id = `folder_${createId()}`;
-        if (!Array.isArray(folder.notes)) folder.notes = [];
-    });
-    return normalized;
-}
-
-let AppData;
-try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    AppData = saved ? normalizeAppData(JSON.parse(saved)) : normalizeAppData(JSON.parse(JSON.stringify(DEFAULT_DATA)));
-} catch {
-    AppData = normalizeAppData(JSON.parse(JSON.stringify(DEFAULT_DATA)));
-}
-
-function saveDb() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(AppData));
-}
-
-/* ==============================================
-   СОСТОЯНИЕ ПРИЛОЖЕНИЯ
-   ============================================== */
-let activeDate = getTodayString();
-let currentFolderId = AppData.notesFolders[0]?.id || '';
-let currentMediaTab = 'books';
-let activeNoteId = null;
-let draggedItem = null;
-let dragSrcIndex = null;
-let activeGoalPickerData = null;
-let activeMoveMediaId = null;
-let isPlanFullscreen = false;
-
-const initialCalendarDate = parseDateString(activeDate) || new Date();
-let calendarYear = initialCalendarDate.getFullYear();
-let calendarMonth = initialCalendarDate.getMonth();
-
-const monthNames = [
-    'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
-    'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
-];
-
-/* ==============================================
-   ИНИЦИАЛИЗАЦИЯ
-   ============================================== */
-window.addEventListener('DOMContentLoaded', () => {
-    lucide.createIcons();
-    applyInitialSettings();
-    renderGoalsWidget();
-    renderDailyPlan();
-    setupCalendar();
-    renderFolders();
-    renderNotes();
-    renderMedia();
-    initHoldButton();
-    setupKeyboardListeners();
-    setupBubbleInteraction();
-});
-
-function setupKeyboardListeners() {
-    document.getElementById('manualTaskInput').addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') addManualTask();
-    });
-    document.getElementById('newMicrotaskInput').addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') addMicrotaskToGoal();
-    });
-    document.getElementById('mediaInput').addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') addMediaItem();
-    });
-    document.getElementById('aiTaskInput').addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') sendAiRequest();
-    });
-}
-
-/* ==============================================
-   ОБЩИЕ НАСТРОЙКИ
-   ============================================== */
-function applyInitialSettings() {
-    if (AppData.settings.darkGlass) {
-        document.body.classList.add('dark-glass');
-        document.getElementById('darkGlassToggle').checked = true;
-    }
-    applyServerSettings();
-}
-
-function toggleDarkGlass() {
-    const isChecked = document.getElementById('darkGlassToggle').checked;
-    AppData.settings.darkGlass = isChecked;
-    saveDb();
-    document.body.classList.toggle('dark-glass', isChecked);
-    updateThemeBasedOnProgress(parseInt(document.getElementById('progressText').innerText) || 0);
-}
-
-function saveApiKey() {
-    AppData.settings.apiKey = document.getElementById('apiKeyInput').value;
-    saveDb();
-}
-
-function confirmResetData() {
-    document.getElementById('resetConfirmModal').classList.remove('hidden');
-}
-
-function closeResetModal() {
-    document.getElementById('resetConfirmModal').classList.add('hidden');
-}
-
-function resetAllData() {
-    localStorage.removeItem(STORAGE_KEY);
-    location.reload();
-}
-
-/* ==============================================
-   ЛОГИКА ТЕМ И ГРАДИЕНТОВ
+   ДИНАМИЧЕСКИЙ ФОН ПО ПРОЦЕНТУ ВЫПОЛНЕНИЯ
    0-29%: красный | 30-49%: оранжевый | 50-79%: жёлтый | 80-100%: зелёный
    ============================================== */
-function updateThemeBasedOnProgress(percent) {
-    const body = document.body;
-    body.classList.remove('theme-red', 'theme-orange', 'theme-yellow', 'theme-green');
-    if (percent < 30) body.classList.add('theme-red');
-    else if (percent < 50) body.classList.add('theme-orange');
-    else if (percent < 80) body.classList.add('theme-yellow');
-    else body.classList.add('theme-green');
+body.theme-red #bg-wrapper { background: linear-gradient(0deg, #ee5252 0%, #f9b387 46%, #d2d6da 72%, #d2d6da 100%); }
+body.theme-orange #bg-wrapper { background: linear-gradient(0deg, #ee5252 0%, #f9b387 38%, #d9d9d9 70%, #d2d6da 100%); }
+body.theme-yellow #bg-wrapper { background: linear-gradient(0deg, #ee8152 0%, #f9e887 46%, #d9d9d9 72%, #d2d6da 100%); }
+body.theme-green #bg-wrapper { background: linear-gradient(0deg, #12b07e 0%, #87f9a4 46%, #d9d9d9 72%, #d2d6da 100%); }
+
+/* Тёмная тема — глубокие, благородные оттенки */
+body.dark-glass.theme-red #bg-wrapper { background: linear-gradient(0deg, #301012 0%, #16090a 58%, #0b0b0d 100%); }
+body.dark-glass.theme-orange #bg-wrapper { background: linear-gradient(0deg, #3a1909 0%, #1d0f07 58%, #0b0b0d 100%); }
+body.dark-glass.theme-yellow #bg-wrapper { background: linear-gradient(0deg, #3a2c09 0%, #1e1908 58%, #0b0b0d 100%); }
+body.dark-glass.theme-green #bg-wrapper { background: linear-gradient(0deg, #063128 0%, #061713 58%, #0b0b0d 100%); }
+
+/* ==============================================
+   ГЛАССМОРФИЗМ — СВЕТЛАЯ ТЕМА
+   ============================================== */
+.glass-panel {
+    background: rgba(255, 255, 255, 0.3);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.06);
+    border-radius: 24px;
+    transition: background 0.3s, border 0.3s, box-shadow 0.3s, height 0.3s;
+}
+
+/* ГЛАССМОРФИЗМ — ТЁМНАЯ ТЕМА */
+.dark-glass .glass-panel {
+    background: rgba(18, 18, 18, 0.65) !important;
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4) !important;
+}
+.dark-glass h1, .dark-glass h2, .dark-glass h3, .dark-glass p, .dark-glass span, .dark-glass label {
+    color: #ffffff !important;
+}
+.dark-glass input, .dark-glass textarea {
+    background: rgba(255,255,255,0.08) !important;
+    color: white !important;
+    border-color: rgba(255,255,255,0.15) !important;
+}
+.dark-glass input::placeholder, .dark-glass textarea::placeholder {
+    color: rgba(255, 255, 255, 0.4) !important;
+}
+.dark-glass .task-item, .dark-glass .note-card, .dark-glass .media-row {
+    background: rgba(255, 255, 255, 0.1) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    color: white !important;
+}
+.dark-glass .task-done, .dark-glass .note-done {
+    background: rgba(255, 255, 255, 0.03) !important;
+    opacity: 0.5;
+}
+
+/* Карточки целей («Мои цели») — отдельная тёмная подложка.
+   Без этого правила карточки оставались на светлом фоне из .goal-card,
+   а серый Tailwind-текст (text-gray-700/800) на нём почти не читался.
+   Лёгкая тонировка в исходный акцентный цвет (розовый/фиолетовый/бирюзовый)
+   сохраняет различие между карточками целей даже в тёмной теме. */
+.dark-glass .goal-card {
+    border: 1px solid rgba(255, 255, 255, 0.14) !important;
+    box-shadow: inset 0 0 10px rgba(255,255,255,0.04), 0 4px 15px rgba(0,0,0,0.3) !important;
+}
+.dark-glass .goal-card.bg-pink-200\/60 { background: rgba(244, 114, 182, 0.14) !important; }
+.dark-glass .goal-card.bg-purple-200\/60 { background: rgba(192, 132, 252, 0.14) !important; }
+.dark-glass .goal-card.bg-teal-200\/60 { background: rgba(45, 212, 191, 0.14) !important; }
+
+/* Перекрываем утилитарные классы Tailwind text-gray-* внутри тёмной темы —
+   они идут с собственной специфичностью и не подхватывают общее h1/h2/p/span правило выше */
+.dark-glass .text-gray-400,
+.dark-glass .text-gray-500,
+.dark-glass .text-gray-600,
+.dark-glass .text-gray-700,
+.dark-glass .text-gray-800,
+.dark-glass .text-gray-900 {
+    color: rgba(255, 255, 255, 0.92) !important;
+}
+.dark-glass .text-gray-700\/60 {
+    color: rgba(255, 255, 255, 0.65) !important;
+}
+
+/* Красный текст (кнопки удаления, предупреждения) — на тёмном фоне обычный
+   text-red-500/600 теряет контраст, делаем его светлее и ярче специально для тёмной темы */
+.dark-glass .text-red-400,
+.dark-glass .text-red-500,
+.dark-glass .text-red-600 {
+    color: #ff7a7a !important;
+}
+.dark-glass .hover\:text-red-600:hover {
+    color: #ff9a9a !important;
+}
+.dark-glass .bg-red-100\/40,
+.dark-glass .bg-red-100\/50 {
+    background: rgba(255, 90, 90, 0.18) !important;
+}
+.dark-glass .hover\:bg-red-200\/40:hover {
+    background: rgba(255, 90, 90, 0.26) !important;
+}
+
+.goal-card {
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    box-shadow: inset 0px 0px 10px rgba(255,255,255,0.5), 0 4px 15px rgba(0,0,0,0.05);
+    border-radius: 16px;
+    transition: transform 0.2s, box-shadow 0.2s;
+    cursor: pointer;
+}
+.goal-card:active { transform: scale(0.95); }
+
+.task-item, .note-card, .media-row {
+    background: rgba(255, 255, 255, 0.65);
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    box-shadow: 0 4px 6px rgba(0,0,0,0.02), inset 0 -2px 4px rgba(0,0,0,0.02);
+    border-radius: 14px;
+    transition: all 0.2s ease;
+}
+
+.task-done, .note-done {
+    opacity: 0.5;
+    background: rgba(255, 255, 255, 0.3) !important;
+}
+.task-done span, .note-done h4, .note-done p {
+    text-decoration: line-through;
+    color: rgba(100,100,100,0.8);
+}
+.task-done .circle-check, .note-done .circle-check {
+    background-color: #4caf50;
+    border-color: #4caf50;
 }
 
 /* ==============================================
-   РЕАКЦИЯ ШАРОВ НА КУРСОР / КАСАНИЕ
+   АНИМИРОВАННЫЕ СФЕРЫ (ШАРЫ) ФОНА
    ============================================== */
-function setupBubbleInteraction() {
-    const container = document.getElementById('bubbleContainer');
-    if (!container) return;
-    const bubbles = Array.from(container.querySelectorAll('.bubble'));
-
-    function nudgeBubbles(clientX, clientY) {
-        bubbles.forEach((bubble) => {
-            const rect = bubble.getBoundingClientRect();
-            const bx = rect.left + rect.width / 2;
-            const by = rect.top + rect.height / 2;
-            const dx = bx - clientX;
-            const dy = by - clientY;
-            const dist = Math.hypot(dx, dy) || 1;
-            const radius = 160;
-            if (dist < radius) {
-                const force = (1 - dist / radius) * 22;
-                const offsetX = (dx / dist) * force;
-                const offsetY = (dy / dist) * force;
-                bubble.style.marginLeft = `${offsetX}px`;
-                bubble.style.marginTop = `${offsetY}px`;
-            } else {
-                bubble.style.marginLeft = '';
-                bubble.style.marginTop = '';
-            }
-        });
-    }
-
-    function resetBubbles() {
-        bubbles.forEach((bubble) => {
-            bubble.style.marginLeft = '';
-            bubble.style.marginTop = '';
-        });
-    }
-
-    document.addEventListener('mousemove', (e) => nudgeBubbles(e.clientX, e.clientY));
-    document.addEventListener('mouseleave', resetBubbles);
-    document.addEventListener('touchmove', (e) => {
-        if (e.touches[0]) nudgeBubbles(e.touches[0].clientX, e.touches[0].clientY);
-    }, { passive: true });
-    document.addEventListener('touchend', resetBubbles);
-}
-
-/* ==============================================
-   УНИВЕРСАЛЬНЫЙ ДИАЛОГ ПРИЛОЖЕНИЯ (замена alert/confirm/prompt)
-   ============================================== */
-let appDialogConfig = null;
-
-function showAppDialog(config) {
-    appDialogConfig = config || {};
-    const modal = document.getElementById('appDialogModal');
-    const input = document.getElementById('appDialogInput');
-    const message = document.getElementById('appDialogMessage');
-    const extra = document.getElementById('appDialogExtraActions');
-    const confirmBtn = document.getElementById('appDialogConfirmBtn');
-    const cancelBtn = document.getElementById('appDialogCancelBtn');
-
-    document.getElementById('appDialogTitle').innerText = appDialogConfig.title || 'Действие';
-    message.innerText = appDialogConfig.message || '';
-    message.classList.toggle('hidden', !appDialogConfig.message);
-    input.classList.toggle('hidden', !appDialogConfig.input);
-    input.value = appDialogConfig.inputValue || '';
-    input.placeholder = appDialogConfig.placeholder || 'Введите название';
-    confirmBtn.innerText = appDialogConfig.confirmText || 'Готово';
-    cancelBtn.innerText = appDialogConfig.cancelText || 'Отмена';
-    confirmBtn.className = `px-5 py-2 ${appDialogConfig.danger ? 'bg-red-500' : 'bg-teal-500'} text-white rounded-full font-bold text-xs active:scale-95`;
-
-    extra.innerHTML = '';
-    (appDialogConfig.extraActions || []).forEach((action) => {
-        const button = document.createElement('button');
-        button.className = `w-full p-2 rounded-xl text-sm font-semibold ${action.danger ? 'text-red-600 bg-red-100/50' : 'text-gray-700 bg-white/50'} active:scale-95 transition-all text-center`;
-        button.innerText = action.label;
-        button.onclick = () => {
-            closeAppDialog();
-            action.onClick?.();
-        };
-        extra.appendChild(button);
-    });
-
-    modal.classList.remove('hidden');
-    if (appDialogConfig.input) setTimeout(() => input.focus(), 50);
-}
-
-function submitAppDialog() {
-    if (!appDialogConfig) return;
-    const input = document.getElementById('appDialogInput');
-    const value = input.value.trim();
-    if (appDialogConfig.input && !value) {
-        input.classList.add('voice-listening');
-        setTimeout(() => input.classList.remove('voice-listening'), 450);
-        return;
-    }
-    const onConfirm = appDialogConfig.onConfirm;
-    closeAppDialog();
-    onConfirm?.(value);
-}
-
-function closeAppDialog() {
-    document.getElementById('appDialogModal').classList.add('hidden');
-    appDialogConfig = null;
-}
-
-/* ==============================================
-   ГОЛОСОВОЙ ВВОД (Web Speech API)
-   ============================================== */
-let activeRecognition = null;
-
-function startVoiceInput(targetId, onDone) {
-    const target = document.getElementById(targetId);
-    if (!target) return;
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-        showAppDialog({
-            title: 'Голос недоступен',
-            message: 'Браузер сейчас не дает доступ к распознаванию речи. Можно ввести текст вручную.',
-            confirmText: 'Понятно'
-        });
-        return;
-    }
-    if (activeRecognition) {
-        activeRecognition.stop();
-        activeRecognition = null;
-    }
-    const recognition = new SpeechRecognition();
-    activeRecognition = recognition;
-    recognition.lang = 'ru-RU';
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-    target.classList.add('voice-listening');
-
-    recognition.onresult = (event) => {
-        const transcript = event.results?.[0]?.[0]?.transcript || '';
-        if (transcript) {
-            const separator = target.value.trim() ? ' ' : '';
-            target.value = target.value + separator + transcript;
-            target.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-        onDone?.(transcript);
-    };
-    recognition.onerror = () => {
-        showAppDialog({
-            title: 'Не расслышала',
-            message: 'Попробуйте еще раз или введите текст вручную.',
-            confirmText: 'Ок'
-        });
-    };
-    recognition.onend = () => {
-        target.classList.remove('voice-listening');
-        activeRecognition = null;
-    };
-    recognition.start();
-}
-
-/* ==============================================
-   ПЛАН ДНЯ — РАЗВЁРТЫВАНИЕ НА ПОЛНЫЙ ЭКРАН
-   ============================================== */
-function navigateDay(direction) {
-    const current = parseDateString(activeDate) || new Date();
-    current.setDate(current.getDate() + direction);
-    activeDate = formatDateLocal(current);
-
-    // Синхронизируем календарь с новой датой
-    calendarYear = current.getFullYear();
-    calendarMonth = current.getMonth();
-
-    renderDailyPlan();
-    setupCalendar();
-}
-
-function togglePlanFullscreen() {
-    const dailyBlock = document.getElementById('dailyPlanBlock');
-    const goalsContainer = document.getElementById('goalsWidgetContainer');
-    const icon = document.getElementById('fullscreenIcon');
-
-    isPlanFullscreen = !isPlanFullscreen;
-
-    if (isPlanFullscreen) {
-        dailyBlock.classList.add('plan-fullscreen');
-        goalsContainer.classList.add('hidden');
-        icon.setAttribute('data-lucide', 'minimize-2');
-    } else {
-        dailyBlock.classList.remove('plan-fullscreen');
-        goalsContainer.classList.remove('hidden');
-        icon.setAttribute('data-lucide', 'maximize-2');
-    }
-    lucide.createIcons();
-}
-
-/* ==============================================
-   ПЛАН ДНЯ — СПИСОК ЗАДАЧ И DRAG & DROP СОРТИРОВКА
-   ============================================== */
-function renderDailyPlan() {
-    const options = { weekday: 'long', day: 'numeric', month: 'numeric' };
-    const dateObj = parseDateString(activeDate) || new Date();
-    const formattedDate = dateObj.toLocaleDateString('ru-RU', options);
-    document.getElementById('activeDateTitle').innerText = formattedDate.charAt(0).toUpperCase() + formattedDate.slice(1);
-
-    const taskList = document.getElementById('taskList');
-    taskList.innerHTML = '';
-    const tasks = AppData.tasksByDate[activeDate] || [];
-
-    if (tasks.length === 0) {
-        taskList.innerHTML = `<div class="text-center py-12 text-gray-500 italic text-sm">На этот день планов нет. Время отдыхать! 🍀</div>`;
-        document.getElementById('progressText').innerText = '0%';
-        updateThemeBasedOnProgress(0);
-        return;
-    }
-
-    tasks.forEach((task, index) => {
-        const item = document.createElement('div');
-        item.className = `task-item flex items-center justify-between p-3 relative overflow-hidden ${task.done ? 'task-done' : ''}`;
-        item.setAttribute('draggable', 'true');
-        item.setAttribute('data-id', task.id);
-        item.setAttribute('data-index', index);
-        item.addEventListener('dragstart', handleTaskDragStart);
-        item.addEventListener('dragover', handleTaskDragOver);
-        item.addEventListener('dragleave', handleTaskDragLeave);
-        item.addEventListener('drop', handleTaskDrop);
-        item.addEventListener('dragend', handleTaskDragEnd);
-
-        let goalLine = '';
-        if (task.goalId) {
-            const goalColors = ['bg-red-300', 'bg-purple-300', 'bg-teal-300'];
-            goalLine = `<div class="absolute left-0 top-0 bottom-0 w-2 ${goalColors[(task.goalId - 1) % 3]}"></div>`;
-        }
-
-        item.innerHTML = `
-            ${goalLine}
-            <div class="flex items-center gap-3 flex-1 min-w-0 pr-12">
-                <div class="drag-handle shrink-0 text-gray-400 select-none">
-                    <i data-lucide="grip-vertical" class="w-5 h-5 pointer-events-none"></i>
-                </div>
-                <span class="handwriting text-2xl text-gray-800 transition-all truncate select-text ${task.goalId ? 'pl-1' : ''}" onclick="toggleTask(${task.id})">
-                    ${index + 1}. ${escapeHtml(task.text)}
-                </span>
-            </div>
-            <div class="circle-check w-6 h-6 rounded-full border-2 border-white bg-transparent shadow-inner transition-colors flex shrink-0 items-center justify-center cursor-pointer" onclick="toggleTask(${task.id})">
-                ${task.done ? '<div class="w-3 h-3 bg-white rounded-full"></div>' : ''}
-            </div>
-        `;
-        taskList.appendChild(item);
-    });
-
-    lucide.createIcons();
-    updateProgressPercentage();
-}
-
-function handleTaskDragStart(e) {
-    draggedItem = this;
-    dragSrcIndex = this.getAttribute('data-index');
-    this.classList.add('sortable-ghost');
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', 'task');
-}
-
-function handleTaskDragOver(e) {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    this.classList.add('drag-over');
-    return false;
-}
-
-function handleTaskDragLeave() {
-    this.classList.remove('drag-over');
-}
-
-function handleTaskDrop(e) {
-    e.stopPropagation();
-    this.classList.remove('drag-over');
-    const targetIndex = Number(this.getAttribute('data-index'));
-    if (dragSrcIndex !== null && Number(dragSrcIndex) !== targetIndex) {
-        const tasks = AppData.tasksByDate[activeDate] || [];
-        const moved = tasks.splice(Number(dragSrcIndex), 1)[0];
-        tasks.splice(targetIndex, 0, moved);
-        saveDb();
-        renderDailyPlan();
-    }
-    return false;
-}
-
-function handleTaskDragEnd() {
-    this.classList.remove('sortable-ghost');
-    document.querySelectorAll('.task-item.drag-over').forEach((item) => item.classList.remove('drag-over'));
-    draggedItem = null;
-    dragSrcIndex = null;
-}
-
-function toggleTask(taskId) {
-    const tasks = AppData.tasksByDate[activeDate] || [];
-    const task = tasks.find((t) => t.id === taskId);
-    if (!task) return;
-
-    task.done = !task.done;
-
-    if (task.goalId && task.microtaskId) {
-        const goal = AppData.goals.find((g) => g.id === task.goalId);
-        if (goal) {
-            const mtask = goal.microtasks.find((m) => m.id === task.microtaskId);
-            if (mtask) {
-                mtask.done = task.done;
-                recalculateGoalProgress(goal);
-            }
-        }
-    }
-
-    saveDb();
-    renderDailyPlan();
-    renderGoalsWidget();
-}
-
-function addManualTask() {
-    const input = document.getElementById('manualTaskInput');
-    const text = input.value.trim();
-    if (!text) return;
-
-    if (!AppData.tasksByDate[activeDate]) AppData.tasksByDate[activeDate] = [];
-    AppData.tasksByDate[activeDate].push({ id: createId(), text, done: false });
-
-    saveDb();
-    input.value = '';
-    renderDailyPlan();
-    setupCalendar();
-}
-
-function updateProgressPercentage() {
-    const tasks = AppData.tasksByDate[activeDate] || [];
-    const allTasks = tasks.length;
-    const doneTasks = tasks.filter((t) => t.done).length;
-
-    if (allTasks === 0) {
-        document.getElementById('progressText').innerText = '0%';
-        updateThemeBasedOnProgress(0);
-        return;
-    }
-
-    const percent = Math.round((doneTasks / allTasks) * 100);
-    document.getElementById('progressText').innerText = percent + '%';
-    updateThemeBasedOnProgress(percent);
-}
-
-/* ==============================================
-   БЛОК: МОИ ЦЕЛИ (GOALS)
-   ============================================== */
-function recalculateGoalProgressValue(goal) {
-    if (!goal.microtasks || goal.microtasks.length === 0) {
-        goal.progress = 0;
-        return;
-    }
-    const total = goal.microtasks.length;
-    const completed = goal.microtasks.filter((task) => task.done).length;
-    goal.progress = Math.round((completed / total) * 100);
-}
-
-function getGoalStatusText(goal) {
-    if (!goal?.deadline) return 'Без дедлайна';
-    const deadline = parseDateString(goal.deadline);
-    if (!deadline) return 'Некорректный дедлайн';
-    const today = parseDateString(getTodayString());
-    const diffDays = Math.ceil((deadline - today) / 86400000);
-    const remainingTasks = goal.microtasks?.filter((task) => !task.done).length || 0;
-
-    if (diffDays < 0) return `Просрочено на ${Math.abs(diffDays)} дн.; осталось шагов: ${remainingTasks}`;
-    if (diffDays === 0) return `Дедлайн сегодня; осталось шагов: ${remainingTasks}`;
-    if (remainingTasks === 0) return `Готово; до дедлайна ${diffDays} дн.`;
-    const pace = Math.max(1, Math.ceil(diffDays / remainingTasks));
-    return `Осталось ${diffDays} дн.; примерно 1 шаг каждые ${pace} дн.`;
-}
-
-function updateGoalStatus(goal) {
-    recalculateGoalProgressValue(goal);
-    goal.time = getGoalStatusText(goal);
-    const statusEl = document.getElementById('goalTimeHint');
-    if (statusEl && goal.id === selectedGoalId) statusEl.innerText = goal.time;
-    const badge = document.getElementById('goalProgressBadge');
-    if (badge && goal.id === selectedGoalId) badge.innerText = `${goal.progress}%`;
-}
-
-function recalculateGoalProgress(goal) {
-    updateGoalStatus(goal);
-}
-
-function renderGoalsWidget() {
-    const container = document.getElementById('goalsWidget');
-    container.innerHTML = '';
-
-    const colors = ['bg-pink-200/60 border-pink-100', 'bg-purple-200/60 border-purple-100', 'bg-teal-200/60 border-teal-100'];
-
-    AppData.goals.forEach((goal, index) => {
-        updateGoalStatus(goal);
-        const card = document.createElement('div');
-        card.className = `goal-card flex-1 p-2 text-center relative overflow-hidden flex flex-col justify-center items-center h-24 ${colors[index % colors.length]}`;
-        card.onclick = () => openGoalDetail(goal.id);
-        const status = goal.deadline ? getGoalStatusText(goal).split(';')[0] : 'Без дедлайна';
-        card.innerHTML = `
-            <span class="absolute left-1 top-1 text-gray-700/60 font-bold text-xs">${goal.progress}%</span>
-            <p class="handwriting text-gray-800 font-bold text-sm leading-snug w-full px-1 text-center truncate-2-lines">${escapeHtml(goal.title)}</p>
-            <span class="text-[10px] text-gray-600 mt-1 leading-tight line-clamp-1">${escapeHtml(status)}</span>
-        `;
-        container.appendChild(card);
-    });
-
-    saveDb();
-    lucide.createIcons();
-}
-
-function openGoalDetail(goalId) {
-    selectedGoalId = goalId;
-    const goal = AppData.goals.find((item) => item.id === goalId);
-    if (!goal) return;
-
-    updateGoalStatus(goal);
-    document.getElementById('goalTitleInput').value = goal.title;
-    document.getElementById('goalDeadlineInput').value = goal.deadline || '';
-    document.getElementById('goalProgressBadge').innerText = `${goal.progress}%`;
-    document.getElementById('goalTimeHint').innerText = goal.time || getGoalStatusText(goal);
-
-    renderGoalMicrotasks(goal);
-    openPanel('goalDetailPanel');
-}
-
-function renderGoalMicrotasks(goal) {
-    const list = document.getElementById('goalMicrotaskList');
-    list.innerHTML = '';
-
-    if (!goal.microtasks || goal.microtasks.length === 0) {
-        list.innerHTML = '<p class="text-xs text-gray-500 italic py-2 text-center">Нет мелких шагов. Добавьте первый!</p>';
-        updateGoalStatus(goal);
-        return;
-    }
-
-    goal.microtasks.forEach((mt) => {
-        const isLinked = checkIfLinkedToToday(goal.id, mt.id);
-        const item = document.createElement('div');
-        item.className = 'flex items-center justify-between p-2 glass-panel text-xs';
-        item.innerHTML = `
-            <div class="flex items-center gap-2 flex-1 min-w-0 pr-2">
-                <input type="checkbox" ${mt.done ? 'checked' : ''} class="h-4 w-4 text-teal-600 rounded shrink-0">
-                <span class="truncate ${mt.done ? 'line-through text-gray-500' : 'text-gray-800 font-medium'}">${escapeHtml(mt.text)}</span>
-            </div>
-            <div class="flex items-center gap-2 shrink-0">
-                ${!mt.done ? `
-                    <button class="js-link-today px-2 py-1 rounded bg-white/50 text-gray-700 text-[10px] active:scale-90 font-bold"
-                            ${isLinked ? 'disabled style="opacity: 0.5;"' : ''}>
-                        ${isLinked ? 'В плане' : '+ сегодня'}
-                    </button>
-                    <button class="js-pick-date p-1 rounded bg-white/40 hover:bg-white/60 text-gray-600 active:scale-90 transition-all" title="Запланировать на дату">
-                        <i data-lucide="calendar" class="w-3.5 h-3.5"></i>
-                    </button>
-                ` : ''}
-                <button class="js-delete-mt text-red-500 px-1 active:scale-75">✕</button>
-            </div>
-        `;
-        item.querySelector('input[type="checkbox"]').addEventListener('change', () => toggleMicrotask(goal.id, mt.id));
-        item.querySelector('.js-link-today')?.addEventListener('click', () => linkMicrotaskToToday(goal.id, mt.id, mt.text));
-        item.querySelector('.js-pick-date')?.addEventListener('click', () => openGoalDatePicker(goal.id, mt.id, mt.text));
-        item.querySelector('.js-delete-mt').addEventListener('click', () => deleteMicrotask(goal.id, mt.id));
-        list.appendChild(item);
-    });
-
-    updateGoalStatus(goal);
-    lucide.createIcons();
-}
-
-let goalDatePickerData = null;
-function openGoalDatePicker(goalId, mtId, text) {
-    goalDatePickerData = { goalId, mtId, text };
-    document.getElementById('goalDatePickerInput').value = activeDate;
-    document.getElementById('goalDatePickerModal').classList.remove('hidden');
-}
-
-function closeGoalDatePicker() {
-    document.getElementById('goalDatePickerModal').classList.add('hidden');
-    goalDatePickerData = null;
-}
-
-function submitGoalDatePicker() {
-    const dateInput = document.getElementById('goalDatePickerInput').value;
-    if (!dateInput || !goalDatePickerData) return;
-
-    const { goalId, mtId, text } = goalDatePickerData;
-    if (!AppData.tasksByDate[dateInput]) AppData.tasksByDate[dateInput] = [];
-
-    const alreadyAssigned = AppData.tasksByDate[dateInput].some((t) => t.goalId === goalId && t.microtaskId === mtId);
-    if (!alreadyAssigned) {
-        AppData.tasksByDate[dateInput].push({ id: createId(), text, done: false, goalId, microtaskId: mtId });
-        saveDb();
-        renderDailyPlan();
-        setupCalendar();
-    }
-
-    closeGoalDatePicker();
-    const goal = AppData.goals.find((g) => g.id === selectedGoalId);
-    if (goal) renderGoalMicrotasks(goal);
-}
-
-function checkIfLinkedToToday(goalId, mtId) {
-    const todayTasks = AppData.tasksByDate[activeDate] || [];
-    return todayTasks.some((t) => t.goalId === goalId && t.microtaskId === mtId);
-}
-
-function linkMicrotaskToToday(goalId, mtId, text) {
-    if (!AppData.tasksByDate[activeDate]) AppData.tasksByDate[activeDate] = [];
-    if (checkIfLinkedToToday(goalId, mtId)) return;
-
-    AppData.tasksByDate[activeDate].push({ id: createId(), text, done: false, goalId, microtaskId: mtId });
-
-    saveDb();
-    renderDailyPlan();
-    setupCalendar();
-    const goal = AppData.goals.find((g) => g.id === goalId);
-    if (goal) renderGoalMicrotasks(goal);
-}
-
-function toggleMicrotask(goalId, mtId) {
-    const goal = AppData.goals.find((g) => g.id === goalId);
-    if (!goal) return;
-    const mt = goal.microtasks.find((m) => m.id === mtId);
-    if (!mt) return;
-
-    mt.done = !mt.done;
-    for (const date in AppData.tasksByDate) {
-        const task = AppData.tasksByDate[date].find((t) => t.goalId === goalId && t.microtaskId === mtId);
-        if (task) task.done = mt.done;
-    }
-
-    recalculateGoalProgress(goal);
-    saveDb();
-    renderGoalsWidget();
-    renderDailyPlan();
-    renderGoalMicrotasks(goal);
-}
-
-function addMicrotaskToGoal() {
-    const input = document.getElementById('newMicrotaskInput');
-    const text = input.value.trim();
-    if (!text || !selectedGoalId) return;
-
-    const goal = AppData.goals.find((g) => g.id === selectedGoalId);
-    if (!goal) return;
-    if (!goal.microtasks) goal.microtasks = [];
-    goal.microtasks.push({ id: createId(), text, done: false });
-
-    recalculateGoalProgress(goal);
-    saveDb();
-    input.value = '';
-    renderGoalMicrotasks(goal);
-    renderGoalsWidget();
-}
-
-function deleteMicrotask(goalId, mtId) {
-    const goal = AppData.goals.find((g) => g.id === goalId);
-    if (!goal) return;
-
-    goal.microtasks = goal.microtasks.filter((m) => m.id !== mtId);
-    for (const date in AppData.tasksByDate) {
-        AppData.tasksByDate[date] = AppData.tasksByDate[date].filter((t) => !(t.goalId === goalId && t.microtaskId === mtId));
-    }
-
-    recalculateGoalProgress(goal);
-    saveDb();
-    renderGoalMicrotasks(goal);
-    renderGoalsWidget();
-    renderDailyPlan();
-}
-
-function saveGoalChanges() {
-    if (!selectedGoalId) return;
-    const goal = AppData.goals.find((item) => item.id === selectedGoalId);
-    if (!goal) return;
-
-    goal.title = document.getElementById('goalTitleInput').value.trim() || 'Без названия';
-    goal.deadline = document.getElementById('goalDeadlineInput').value;
-
-    updateGoalStatus(goal);
-    saveDb();
-    renderGoalsWidget();
-}
-
-/* ==============================================
-   БЛОК: КАЛЕНДАРЬ
-   ============================================== */
-function setupCalendar() {
-    const grid = document.getElementById('calendarGrid');
-    grid.innerHTML = '';
-
-    document.getElementById('monthYearTitle').innerText = `${monthNames[calendarMonth]} ${calendarYear}`;
-
-    const firstDayIndex = new Date(calendarYear, calendarMonth, 1).getDay();
-    const correctedFirstDayIndex = firstDayIndex === 0 ? 6 : firstDayIndex - 1;
-    const totalDays = new Date(calendarYear, calendarMonth + 1, 0).getDate();
-
-    for (let i = 0; i < correctedFirstDayIndex; i++) {
-        const emptyCell = document.createElement('div');
-        emptyCell.className = 'py-2';
-        grid.appendChild(emptyCell);
-    }
-
-    for (let day = 1; day <= totalDays; day++) {
-        const formattedDateStr = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-
-        const dayCell = document.createElement('div');
-        dayCell.className = 'py-2 text-sm font-semibold rounded-lg cursor-pointer transition-all hover:bg-white/40 active:scale-90 flex flex-col justify-center items-center h-12';
-        dayCell.className += formattedDateStr === activeDate
-            ? ' bg-white/70 shadow-sm border border-white/60 text-gray-900'
-            : ' text-gray-700';
-
-        const tasksCount = AppData.tasksByDate[formattedDateStr]?.length || 0;
-        const dotIndicator = tasksCount > 0 ? '<div class="w-1.5 h-1.5 bg-gray-800 rounded-full mt-0.5"></div>' : '';
-
-        dayCell.innerHTML = `<span>${day}</span>${dotIndicator}`;
-        dayCell.onclick = () => selectCalendarDate(formattedDateStr);
-        grid.appendChild(dayCell);
-    }
-}
-
-function changeMonth(dir) {
-    calendarMonth += dir;
-    if (calendarMonth < 0) {
-        calendarMonth = 11;
-        calendarYear--;
-    } else if (calendarMonth > 11) {
-        calendarMonth = 0;
-        calendarYear++;
-    }
-    setupCalendar();
-}
-
-function selectCalendarDate(dateString) {
-    activeDate = dateString;
-    setupCalendar();
-    renderDailyPlan();
-    closePanel('calendarPanel');
-}
-
-/* ==============================================
-   БЛОК: ЗАМЕТКИ И ПАПКИ
-   ============================================== */
-let lastFolderTap = { id: null, time: 0 };
-
-function handleFolderTap(folderId) {
-    const now = Date.now();
-    const isDoubleTap = lastFolderTap.id === folderId && now - lastFolderTap.time < 360;
-    currentFolderId = folderId;
-    renderFolders();
-    renderNotes();
-    if (isDoubleTap) editFolderDialog();
-    lastFolderTap = { id: folderId, time: now };
-}
-
-function renderFolders() {
-    const list = document.getElementById('foldersList');
-    list.innerHTML = '';
-
-    AppData.notesFolders.forEach((folder) => {
-        const button = document.createElement('button');
-        const isActive = folder.id === currentFolderId;
-        button.className = `folder-pill px-4 py-2 rounded-full font-bold text-xs shrink-0 transition-all ${isActive ? 'bg-white/80 text-gray-800 shadow-sm border border-white/40' : 'bg-white/30 text-gray-600'}`;
-        button.innerText = folder.name;
-        button.setAttribute('draggable', 'true');
-        button.onclick = () => handleFolderTap(folder.id);
-        button.ondblclick = (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            currentFolderId = folder.id;
-            renderFolders();
-            renderNotes();
-            editFolderDialog();
-        };
-        button.oncontextmenu = (event) => {
-            event.preventDefault();
-            currentFolderId = folder.id;
-            renderFolders();
-            renderNotes();
-            editFolderDialog();
-        };
-        button.addEventListener('dragstart', (event) => handleFolderDragStart(event, folder.id));
-        button.addEventListener('dragover', handleFolderDragOver);
-        button.addEventListener('dragleave', handleFolderDragLeave);
-        button.addEventListener('drop', (event) => handleFolderDrop(event, folder.id));
-        list.appendChild(button);
-    });
-
-    const editBtn = document.getElementById('editActiveFolderBtn');
-    editBtn.classList.toggle('hidden', AppData.notesFolders.length === 0);
-
-    const addFolderBtn = document.createElement('button');
-    addFolderBtn.className = 'px-3 py-2 rounded-full bg-white/40 text-gray-800 font-bold text-xs shrink-0 active:scale-90 transition-transform hover:bg-white/60';
-    addFolderBtn.innerHTML = "<i data-lucide='plus' class='w-3.5 h-3.5 inline'></i>";
-    addFolderBtn.onclick = openFolderCreateDialog;
-    list.appendChild(addFolderBtn);
-
-    lucide.createIcons();
-}
-
-function openFolderCreateDialog() {
-    showAppDialog({
-        title: 'Новый раздел',
-        message: 'Название раздела заметок',
-        input: true,
-        confirmText: 'Создать',
-        onConfirm: (folderName) => {
-            const newId = `folder_${createId()}`;
-            AppData.notesFolders.push({ id: newId, name: folderName.trim(), notes: [] });
-            currentFolderId = newId;
-            saveDb();
-            renderFolders();
-            renderNotes();
-        }
-    });
-}
-
-function editFolderDialog() {
-    const folder = AppData.notesFolders.find((item) => item.id === currentFolderId);
-    if (!folder) return;
-    showAppDialog({
-        title: `Раздел "${folder.name}"`,
-        message: 'Можно переименовать или удалить раздел вместе с его заметками.',
-        confirmText: 'Переименовать',
-        onConfirm: () => openFolderRenameDialog(folder.id),
-        extraActions: [{
-            label: 'Удалить раздел',
-            danger: true,
-            onClick: () => confirmDeleteFolder(folder.id)
-        }]
-    });
-}
-
-function openFolderRenameDialog(folderId) {
-    const folder = AppData.notesFolders.find((item) => item.id === folderId);
-    if (!folder) return;
-    showAppDialog({
-        title: 'Название раздела',
-        message: 'Введите новое название.',
-        input: true,
-        inputValue: folder.name,
-        confirmText: 'Сохранить',
-        onConfirm: (newName) => {
-            folder.name = newName.trim();
-            saveDb();
-            renderFolders();
-        }
-    });
-}
-
-function confirmDeleteFolder(folderId) {
-    const folder = AppData.notesFolders.find((item) => item.id === folderId);
-    if (!folder) return;
-    showAppDialog({
-        title: 'Удалить раздел?',
-        message: `Раздел "${folder.name}" и все его заметки будут удалены.`,
-        confirmText: 'Удалить',
-        danger: true,
-        onConfirm: () => {
-            AppData.notesFolders = AppData.notesFolders.filter((item) => item.id !== folderId);
-            currentFolderId = AppData.notesFolders[0]?.id || '';
-            saveDb();
-            renderFolders();
-            renderNotes();
-        }
-    });
-}
-
-function handleFolderDragStart(event, folderId) {
-    event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData('text/plain', `folder:${folderId}`);
-    event.currentTarget.classList.add('sortable-ghost');
-}
-
-function handleFolderDragOver(event) {
-    event.preventDefault();
-    event.currentTarget.classList.add('drag-over');
-}
-
-function handleFolderDragLeave(event) {
-    event.currentTarget.classList.remove('drag-over');
-    event.currentTarget.classList.remove('sortable-ghost');
-}
-
-function handleFolderDrop(event, targetFolderId) {
-    event.preventDefault();
-    event.currentTarget.classList.remove('drag-over');
-    event.currentTarget.classList.remove('sortable-ghost');
-    const dragData = event.dataTransfer.getData('text/plain');
-    if (dragData.startsWith('note:')) {
-        const [, fromFolderId, rawNoteId] = dragData.split(':');
-        moveNoteToFolder(parseInt(rawNoteId), fromFolderId || currentFolderId, targetFolderId);
-    } else if (dragData.startsWith('folder:')) {
-        moveFolderBefore(dragData.split(':')[1], targetFolderId);
-    }
-}
-
-function moveFolderBefore(sourceFolderId, targetFolderId) {
-    if (!sourceFolderId || sourceFolderId === targetFolderId) return;
-    const sourceIndex = AppData.notesFolders.findIndex((folder) => folder.id === sourceFolderId);
-    const targetIndex = AppData.notesFolders.findIndex((folder) => folder.id === targetFolderId);
-    if (sourceIndex === -1 || targetIndex === -1) return;
-    const [movedFolder] = AppData.notesFolders.splice(sourceIndex, 1);
-    const adjustedTarget = AppData.notesFolders.findIndex((folder) => folder.id === targetFolderId);
-    AppData.notesFolders.splice(adjustedTarget, 0, movedFolder);
-    currentFolderId = sourceFolderId;
-    saveDb();
-    renderFolders();
-    renderNotes();
-}
-
-// Горизонтальная прокрутка списка разделов колесом мыши (десктоп)
-document.addEventListener('DOMContentLoaded', () => {
-    const foldersList = document.getElementById('foldersList');
-    foldersList?.addEventListener('wheel', (event) => {
-        if (event.deltaY === 0) return;
-        event.preventDefault();
-        foldersList.scrollLeft += event.deltaY;
-    }, { passive: false });
-});
-
-function renderNotes() {
-    const container = document.getElementById('notesList');
-    container.innerHTML = '';
-
-    const folder = AppData.notesFolders.find((item) => item.id === currentFolderId);
-    if (!folder || folder.notes.length === 0) {
-        container.innerHTML = '<p class="text-sm text-gray-500 italic text-center py-12">В этой папке пусто</p>';
-        return;
-    }
-
-    folder.notes.forEach((note) => {
-        const card = document.createElement('div');
-        card.className = `note-card p-4 flex items-center justify-between gap-4 relative overflow-hidden cursor-pointer ${note.done ? 'note-done' : ''}`;
-        card.setAttribute('draggable', 'true');
-        card.addEventListener('dragstart', (event) => handleNoteDragStart(event, note.id));
-
-        card.innerHTML = `
-            <div class="circle-check w-6 h-6 rounded-full border-2 border-white bg-transparent shadow-inner transition-colors flex shrink-0 items-center justify-center cursor-pointer z-10">
-                ${note.done ? '<div class="w-3 h-3 bg-white rounded-full"></div>' : ''}
-            </div>
-            <div class="flex-1 min-w-0 js-open-note">
-                <h4 class="font-bold text-gray-800 text-base truncate leading-tight">${escapeHtml(note.title || 'Без названия')}</h4>
-                <p class="text-xs text-gray-500 line-clamp-2 mt-1 leading-snug break-words">${escapeHtml(note.text || 'Нет текста...')}</p>
-            </div>
-            <button class="js-delete-note p-2 text-red-400 hover:text-red-600 transition-colors shrink-0 z-10 active:scale-75" title="Удалить заметку">
-                <i data-lucide="trash-2" class="w-5 h-5 pointer-events-none"></i>
-            </button>
-        `;
-        card.querySelector('.circle-check').addEventListener('click', (event) => toggleNoteDone(note.id, event));
-        card.querySelector('.js-open-note').addEventListener('click', () => openNoteEdit(note.id));
-        card.querySelector('.js-delete-note').addEventListener('click', (event) => deleteNoteInstantly(note.id, event));
-        container.appendChild(card);
-    });
-
-    lucide.createIcons();
-}
-
-function toggleNoteDone(noteId, event) {
-    event.stopPropagation();
-    const folder = AppData.notesFolders.find((f) => f.id === currentFolderId);
-    const note = folder?.notes.find((n) => n.id === noteId);
-    if (!note) return;
-    note.done = !note.done;
-    saveDb();
-    renderNotes();
-}
-
-function deleteNoteInstantly(noteId, event) {
-    event.stopPropagation();
-    const folder = AppData.notesFolders.find((item) => item.id === currentFolderId);
-    const note = folder?.notes.find((item) => item.id === noteId);
-    if (!folder || !note) return;
-    showAppDialog({
-        title: 'Удалить заметку?',
-        message: note.title || 'Без названия',
-        confirmText: 'Удалить',
-        danger: true,
-        onConfirm: () => {
-            folder.notes = folder.notes.filter((item) => item.id !== noteId);
-            saveDb();
-            renderNotes();
-        }
-    });
-}
-
-function handleNoteDragStart(event, noteId) {
-    event.dataTransfer.setData('text/plain', `note:${currentFolderId}:${noteId}`);
-}
-
-function moveNoteToFolder(noteId, fromFolderId, toFolderId) {
-    if (fromFolderId === toFolderId) return;
-    const fromFolder = AppData.notesFolders.find((f) => f.id === fromFolderId);
-    const toFolder = AppData.notesFolders.find((f) => f.id === toFolderId);
-    if (!fromFolder || !toFolder) return;
-
-    const noteIndex = fromFolder.notes.findIndex((n) => n.id === noteId);
-    if (noteIndex > -1) {
-        const noteToMove = fromFolder.notes.splice(noteIndex, 1)[0];
-        toFolder.notes.push(noteToMove);
-        saveDb();
-        renderNotes();
-        renderFolders();
-    }
-}
-
-function openNoteEdit(noteId) {
-    const folder = AppData.notesFolders.find((item) => item.id === currentFolderId);
-    if (!folder) return;
-    const note = folder.notes.find((item) => item.id === noteId);
-    if (!note) return;
-
-    activeNoteId = noteId;
-    document.getElementById('editNoteTitle').value = note.title;
-    document.getElementById('editNoteText').value = note.text;
-    document.getElementById('noteEditModal').classList.remove('hidden');
-}
-
-function addNewNote() {
-    const folder = AppData.notesFolders.find((item) => item.id === currentFolderId);
-    if (!folder) return;
-
-    const newNote = { id: createId(), title: 'Новая заметка', text: '', done: false };
-    folder.notes.push(newNote);
-    saveDb();
-    renderNotes();
-    openNoteEdit(newNote.id);
-}
-
-function saveActiveNote() {
-    const folder = AppData.notesFolders.find((item) => item.id === currentFolderId);
-    const note = folder?.notes.find((item) => item.id === activeNoteId);
-    if (note) {
-        note.title = document.getElementById('editNoteTitle').value;
-        note.text = document.getElementById('editNoteText').value;
-        saveDb();
-        renderNotes();
-    }
-    closeNoteEdit();
-}
-
-function closeNoteEdit() {
-    document.getElementById('noteEditModal').classList.add('hidden');
-    activeNoteId = null;
-}
-
-/* ==============================================
-   БЛОК: КНИГИ И ФИЛЬМЫ (МЕДИА)
-   ============================================== */
-function setMediaTab(tab) {
-    currentMediaTab = tab;
-    document.getElementById('tabBooks').className = `flex-1 py-2 rounded-xl text-sm font-bold ${tab === 'books' ? 'bg-white/60 text-gray-800 shadow-sm border border-white/40' : 'text-gray-500'}`;
-    document.getElementById('tabMovies').className = `flex-1 py-2 rounded-xl text-sm font-bold ${tab === 'movies' ? 'bg-white/60 text-gray-800 shadow-sm border border-white/40' : 'text-gray-500'}`;
-    document.getElementById('tabSeries').className = `flex-1 py-2 rounded-xl text-sm font-bold ${tab === 'series' ? 'bg-white/60 text-gray-800 shadow-sm border border-white/40' : 'text-gray-500'}`;
-    setupMediaDragSupport();
-    renderMedia();
-}
-
-function setupMediaDragSupport() {
-    const tabs = ['tabBooks', 'tabMovies', 'tabSeries'];
-    const names = ['books', 'movies', 'series'];
-    tabs.forEach((tabId, idx) => {
-        const el = document.getElementById(tabId);
-        el.ondragover = (event) => { event.preventDefault(); el.classList.add('drag-over'); };
-        el.ondragleave = () => el.classList.remove('drag-over');
-        el.ondrop = (event) => {
-            event.preventDefault();
-            el.classList.remove('drag-over');
-            const dragData = event.dataTransfer.getData('text/plain');
-            if (!dragData.startsWith('media:')) return;
-            const [, fromTab, rawItemId] = dragData.split(':');
-            moveMediaToTab(parseInt(rawItemId), fromTab || currentMediaTab, names[idx]);
-        };
-    });
-}
-
-function renderMedia() {
-    const container = document.getElementById('mediaList');
-    container.innerHTML = '';
-
-    const items = AppData.media[currentMediaTab] || [];
-    if (items.length === 0) {
-        container.innerHTML = '<p class="text-sm text-gray-500 italic text-center py-12">Список пуст. Добавьте первую находку!</p>';
-        return;
-    }
-
-    items.forEach((item, index) => {
-        const row = document.createElement('div');
-        row.className = 'media-row flex justify-between items-center p-3 relative overflow-hidden';
-        row.setAttribute('draggable', 'true');
-        row.setAttribute('data-index', index);
-        row.setAttribute('data-id', item.id);
-        row.addEventListener('dragstart', handleMediaDragStart);
-        row.addEventListener('dragover', handleMediaDragOverLocal);
-        row.addEventListener('dragleave', handleMediaDragLeaveLocal);
-        row.addEventListener('drop', handleMediaDropLocal);
-        row.addEventListener('dragend', handleMediaDragEnd);
-
-        row.innerHTML = `
-            <span class="text-gray-800 font-medium truncate flex-1 mr-4">${escapeHtml(item.title)}</span>
-            <div class="flex items-center gap-2">
-                <button class="js-move-media p-1 text-gray-400 hover:text-gray-700 active:scale-75 transition-transform" title="Переместить полку">
-                    <i data-lucide="shrink" class="w-4 h-4"></i>
-                </button>
-                <button class="js-delete-media text-red-500 active:scale-75 px-1"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
-            </div>
-        `;
-        row.querySelector('.js-move-media').addEventListener('click', (event) => openMoveMediaDialog(item.id, event));
-        row.querySelector('.js-delete-media').addEventListener('click', () => deleteMedia(item.id));
-        container.appendChild(row);
-    });
-
-    lucide.createIcons();
-}
-
-function handleMediaDragStart(event) {
-    draggedItem = this;
-    event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData('text/plain', `media:${currentMediaTab}:${this.getAttribute('data-id')}`);
-    this.classList.add('sortable-ghost');
-}
-
-function handleMediaDragOverLocal(event) {
-    event.preventDefault();
-    this.classList.add('drag-over');
-    return false;
-}
-
-function handleMediaDragLeaveLocal() {
-    this.classList.remove('drag-over');
-}
-
-function handleMediaDropLocal(event) {
-    event.stopPropagation();
-    this.classList.remove('drag-over');
-    const srcIdx = draggedItem?.getAttribute('data-index');
-    const targetIdx = this.getAttribute('data-index');
-    if (srcIdx !== null && targetIdx !== null && srcIdx !== targetIdx) {
-        const arr = AppData.media[currentMediaTab];
-        const moved = arr.splice(Number(srcIdx), 1)[0];
-        arr.splice(Number(targetIdx), 0, moved);
-        saveDb();
-        renderMedia();
-    }
-    return false;
-}
-
-function handleMediaDragEnd() {
-    this.classList.remove('sortable-ghost');
-    this.classList.remove('drag-over');
-    draggedItem = null;
-}
-
-function moveMediaToTab(itemId, fromTab, toTab) {
-    if (fromTab === toTab) return;
-    const fromArray = AppData.media[fromTab];
-    const toArray = AppData.media[toTab];
-    if (!fromArray || !toArray) return;
-
-    const index = fromArray.findIndex((i) => i.id === itemId);
-    if (index > -1) {
-        const itemToMove = fromArray.splice(index, 1)[0];
-        toArray.push(itemToMove);
-        saveDb();
-        renderMedia();
-    }
-}
-
-function openMoveMediaDialog(itemId, event) {
-    event.stopPropagation();
-    activeMoveMediaId = itemId;
-    const targetList = document.getElementById('moveItemFoldersList');
-    targetList.innerHTML = '';
-
-    const tabNamesMap = { books: 'Книги 📚', movies: 'Фильмы 🎬', series: 'Сериалы 🍿' };
-
-    for (const tab in tabNamesMap) {
-        if (tab === currentMediaTab) continue;
-        const btn = document.createElement('button');
-        btn.className = 'w-full p-2 rounded-xl text-sm font-semibold text-gray-700 bg-white/50 active:scale-95 transition-all text-center';
-        btn.innerText = tabNamesMap[tab];
-        btn.onclick = () => {
-            moveMediaToTab(activeMoveMediaId, currentMediaTab, tab);
-            closeMoveModal();
-        };
-        targetList.appendChild(btn);
-    }
-
-    document.getElementById('moveItemModalTitle').innerText = 'Перенос досуга';
-    document.getElementById('moveItemModal').classList.remove('hidden');
-}
-
-function closeMoveModal() {
-    document.getElementById('moveItemModal').classList.add('hidden');
-    activeMoveMediaId = null;
-}
-
-function addMediaItem() {
-    const input = document.getElementById('mediaInput');
-    const title = input.value.trim();
-    if (!title) return;
-
-    AppData.media[currentMediaTab].push({ id: createId(), title });
-    saveDb();
-    input.value = '';
-    renderMedia();
-}
-
-function deleteMedia(itemId) {
-    const item = AppData.media[currentMediaTab].find((i) => i.id === itemId);
-    if (!item) return;
-    showAppDialog({
-        title: 'Удалить из списка?',
-        message: item.title,
-        confirmText: 'Удалить',
-        danger: true,
-        onConfirm: () => {
-            AppData.media[currentMediaTab] = AppData.media[currentMediaTab].filter((i) => i.id !== itemId);
-            saveDb();
-            renderMedia();
-        }
-    });
-}
-
-/* ==============================================
-   УПРАВЛЕНИЕ СЛАЙД-ПАНЕЛЯМИ
-   ============================================== */
-function openPanel(id) {
-    document.querySelectorAll('.slide-panel').forEach((p) => p.classList.remove('active'));
-    document.getElementById(id).classList.add('active');
-}
-
-function closePanel(id) {
-    document.getElementById(id).classList.remove('active');
-}
-
-/* ==============================================
-   КНОПКА МИКРОФОНА: КОРОТКОЕ НАЖАТИЕ = ГОЛОС, УДЕРЖАНИЕ = ТЕКСТ
-   ============================================== */
-function initHoldButton() {
-    const micBtn = document.getElementById('micBtn');
-    const textWrapper = document.getElementById('textInputWrapper');
-    let pressTimer;
-    let longPressTriggered = false;
-
-    function expandTextInput() {
-        micBtn.classList.add('hidden');
-        textWrapper.classList.remove('hidden');
-        textWrapper.classList.add('flex');
-        document.getElementById('aiTaskInput').focus();
-    }
-
-    function startPress() {
-        longPressTriggered = false;
-        pressTimer = window.setTimeout(() => {
-            longPressTriggered = true;
-            expandTextInput();
-        }, 600);
-    }
-
-    function cancelPress() {
-        if (pressTimer) clearTimeout(pressTimer);
-    }
-
-    micBtn.addEventListener('click', () => {
-        if (longPressTriggered) {
-            longPressTriggered = false;
-            return;
-        }
-        // Короткое нажатие — сразу открываем текстовое поле и запускаем голосовой ввод
-        expandTextInput();
-        startVoiceInput('aiTaskInput');
-    });
-    micBtn.addEventListener('mousedown', startPress);
-    micBtn.addEventListener('mouseup', cancelPress);
-    micBtn.addEventListener('mouseleave', cancelPress);
-    micBtn.addEventListener('touchstart', (event) => {
-        event.preventDefault();
-        startPress();
-    });
-    micBtn.addEventListener('touchend', (event) => {
-        event.preventDefault();
-        cancelPress();
-        if (!longPressTriggered) {
-            expandTextInput();
-            startVoiceInput('aiTaskInput');
-        }
-    });
-}
-
-function collapseToMicOnly() {
-    const textWrapper = document.getElementById('textInputWrapper');
-    const micBtn = document.getElementById('micBtn');
-    textWrapper.classList.add('hidden');
-    textWrapper.classList.remove('flex');
-    micBtn.classList.remove('hidden');
-}
-
-/* ==============================================
-   ЗАПРОС К ИИ-ПОМОЩНИКУ
-   ============================================== */
-function sendAiRequest() {
-    const input = document.getElementById('aiTaskInput');
-    const val = input.value.trim();
-    if (!val) return;
-
-    document.getElementById('aiResponseText').innerText = `Я получила запрос: "${val}".\n\nГолосовой и текстовый ввод уже работают на уровне интерфейса. Чтобы я могла реально добавлять задачи, заметки и планы — подключите свой бесплатный API-ключ Gemini в Настройках.`;
-    document.getElementById('aiResponseModal').classList.remove('hidden');
-
-    input.value = '';
-    collapseToMicOnly();
-}
-
-function closeAiModal() {
-    document.getElementById('aiResponseModal').classList.add('hidden');
-}
-
-/* ==============================================
-   НАСТРОЙКИ СЕРВЕРА И PUSH-УВЕДОМЛЕНИЙ
-   ============================================== */
-function applyServerSettings() {
-    const url = localStorage.getItem('server_url') || '';
-    const secret = localStorage.getItem('server_secret') || '';
-    const el = document.getElementById('serverUrlInput');
-    const sel = document.getElementById('serverSecretInput');
-    if (el) el.value = url;
-    if (sel) sel.value = secret;
-    updatePushStatusUI();
-}
-
-function saveServerSettings() {
-    const url = document.getElementById('serverUrlInput')?.value.trim().replace(/\/$/, '') || '';
-    const secret = document.getElementById('serverSecretInput')?.value.trim() || '';
-    localStorage.setItem('server_url', url);
-    localStorage.setItem('server_secret', secret);
-}
-
-async function checkConnection() {
-    const statusText = document.getElementById('serverStatusText');
-    if (statusText) statusText.innerText = 'Проверяю...';
-
-    const result = await checkServerConnection();
-
-    if (statusText) {
-        if (result.ok) {
-            statusText.innerText = `✅ Подключено · Gemini ${result.gemini ? '✓' : '✗'} · Push ${result.push ? '✓' : '✗'}`;
-        } else {
-            statusText.innerText = `❌ Ошибка: ${result.error}`;
-        }
-    }
-}
-
-async function updatePushStatusUI() {
-    const statusText = document.getElementById('pushStatusText');
-    const btn = document.getElementById('pushToggleBtn');
-    if (!statusText || !btn) return;
-
-    const status = await getPushStatus();
-    if (status === 'subscribed') {
-        statusText.innerText = 'Статус: ✅ Уведомления включены';
-        btn.innerText = 'Отключить';
-    } else if (status === 'unsupported') {
-        statusText.innerText = 'Статус: ⚠️ Не поддерживается браузером';
-        btn.disabled = true;
-    } else {
-        statusText.innerText = 'Статус: выключены';
-        btn.innerText = 'Включить';
-    }
-}
-
-async function togglePush() {
-    const statusText = document.getElementById('pushStatusText');
-    const status = await getPushStatus();
-
-    try {
-        if (status === 'subscribed') {
-            if (statusText) statusText.innerText = 'Отключаю...';
-            await disablePushNotifications();
-        } else {
-            if (statusText) statusText.innerText = 'Подключаю...';
-            await setupPushNotifications();
-        }
-    } catch (err) {
-        showAppDialog({
-            title: 'Ошибка уведомлений',
-            message: err.message,
-            confirmText: 'Понятно'
-        });
-    }
-    updatePushStatusUI();
-}
-
-async function savePushTime() {
-    const time = document.getElementById('pushTimeInput')?.value;
-    if (!time) return;
-    try {
-        await updatePushTime(time);
-        showAppDialog({
-            title: 'Время сохранено',
-            message: `Утреннее напоминание будет приходить в ${time} МСК`,
-            confirmText: 'Ок'
-        });
-    } catch (err) {
-        showAppDialog({ title: 'Ошибка', message: err.message, confirmText: 'Ок' });
-    }
-}
-
-async function testPush() {
-    try {
-        await sendTestPush();
-        showAppDialog({
-            title: 'Отправлено!',
-            message: 'Тестовое уведомление отправлено. Оно придёт в течение нескольких секунд.',
-            confirmText: 'Ок'
-        });
-    } catch (err) {
-        showAppDialog({ title: 'Ошибка', message: err.message, confirmText: 'Ок' });
+.bubble-container {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none; /* снято точечно через JS для реакции на касание/курсор */
+}
+.bubble {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(8px);
+    animation: floatUp 25s infinite ease-in-out, breathe 6s infinite alternate ease-in-out;
+    opacity: 0.8;
+    transition: background 1s, box-shadow 1s, margin 0.6s ease-out;
+    will-change: transform, margin;
+}
+
+/* Цвета шаров — светлая тема */
+body.theme-red .bubble {
+    background: radial-gradient(circle at 30% 30%, rgba(255, 200, 200, 0.9), rgba(255, 100, 100, 0.3));
+    box-shadow: 0 0 35px rgba(255, 100, 100, 0.4), inset 0 0 15px rgba(255, 255, 255, 0.6);
+}
+body.theme-orange .bubble {
+    background: radial-gradient(circle at 30% 30%, rgba(255, 230, 190, 0.9), rgba(255, 160, 50, 0.3));
+    box-shadow: 0 0 35px rgba(255, 160, 50, 0.4), inset 0 0 15px rgba(255, 255, 255, 0.6);
+}
+body.theme-yellow .bubble {
+    background: radial-gradient(circle at 30% 30%, rgba(255, 245, 190, 0.9), rgba(238, 129, 82, 0.25));
+    box-shadow: 0 0 35px rgba(249, 232, 135, 0.45), inset 0 0 15px rgba(255,255,255,0.6);
+}
+body.theme-green .bubble {
+    background: radial-gradient(circle at 30% 30%, rgba(210, 245, 215, 0.9), rgba(60, 180, 80, 0.3));
+    box-shadow: 0 0 35px rgba(60, 180, 80, 0.4), inset 0 0 15px rgba(255, 255, 255, 0.6);
+}
+
+/* Цвета шаров — тёмная тема (приглушённые, благородные тона) */
+body.dark-glass.theme-red .bubble {
+    background: radial-gradient(circle at 30% 30%, rgba(120, 30, 30, 0.65), rgba(30, 5, 5, 0.2));
+    box-shadow: 0 0 30px rgba(120, 30, 30, 0.3), inset 0 0 10px rgba(255, 255, 255, 0.1);
+}
+body.dark-glass.theme-orange .bubble {
+    background: radial-gradient(circle at 30% 30%, rgba(130, 70, 15, 0.65), rgba(35, 15, 5, 0.2));
+    box-shadow: 0 0 30px rgba(130, 70, 15, 0.3), inset 0 0 10px rgba(255, 255, 255, 0.1);
+}
+body.dark-glass.theme-yellow .bubble {
+    background: radial-gradient(circle at 30% 30%, rgba(125, 98, 22, 0.58), rgba(36, 28, 7, 0.2));
+    box-shadow: 0 0 30px rgba(125, 98, 22, 0.25), inset 0 0 10px rgba(255,255,255,0.1);
+}
+body.dark-glass.theme-green .bubble {
+    background: radial-gradient(circle at 30% 30%, rgba(25, 80, 40, 0.65), rgba(5, 25, 10, 0.2));
+    box-shadow: 0 0 30px rgba(25, 80, 40, 0.3), inset 0 0 10px rgba(255, 255, 255, 0.1);
+}
+
+.bubble:nth-child(1) { width: 140px; height: 140px; left: 8%; bottom: -180px; animation-duration: 22s; animation-delay: 0s; }
+.bubble:nth-child(2) { width: 100px; height: 100px; left: 45%; bottom: -130px; animation-duration: 28s; animation-delay: 3s; }
+.bubble:nth-child(3) { width: 165px; height: 165px; left: 75%; bottom: -220px; animation-duration: 32s; animation-delay: 1s; }
+.bubble:nth-child(4) { width: 85px; height: 85px; left: 25%; bottom: -100px; animation-duration: 18s; animation-delay: 5s; }
+.bubble:nth-child(5) { width: 125px; height: 125px; left: 60%; bottom: -160px; animation-duration: 25s; animation-delay: 4s; }
+
+@keyframes floatUp {
+    0% { transform: translateY(0) scale(1); opacity: 0; }
+    10% { opacity: 0.8; }
+    90% { opacity: 0.8; }
+    100% { transform: translateY(-120vh) scale(0.85); opacity: 0; }
+}
+@keyframes breathe {
+    0% { transform: scale(1) rotate(0deg); }
+    100% { transform: scale(1.15) rotate(4deg); }
+}
+
+/* Уважаем системную настройку "уменьшить движение" — не убираем анимацию совсем,
+   чтобы фон не выглядел сломанным, а делаем её медленнее и спокойнее */
+@media (prefers-reduced-motion: reduce) {
+    .bubble {
+        animation-duration: 60s, 16s !important;
     }
 }
 
 /* ==============================================
-   ИИ-ЧАТ — ЛОГИКА И РЕНДЕР
+   КНОПКА МИКРОФОНА И ПАНЕЛИ
    ============================================== */
-const CHAT_STORAGE_KEY = 'smart_planner_chat';
-let chatHistory = [];
-let isVoiceReplyEnabled = false;
-let isSpeaking = false;
-let pendingSuggestions = [];
+.mic-btn {
+    background: rgba(255, 255, 255, 0.25);
+    border: 3px solid white;
+    box-shadow: 0 0 20px rgba(255,255,255,0.4), inset 0 0 15px rgba(255,255,255,0.4);
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    z-index: 50;
+}
+.mic-btn:active { transform: scale(0.9); background: rgba(255,255,255,0.4); }
 
-// Загружаем историю чата из localStorage
-function loadChatHistory() {
-    try {
-        const saved = localStorage.getItem(CHAT_STORAGE_KEY);
-        chatHistory = saved ? JSON.parse(saved) : [];
-    } catch {
-        chatHistory = [];
-    }
+.slide-panel {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -100%;
+    height: 88%;
+    z-index: 100;
+    transition: bottom 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.slide-panel.active { bottom: 0; }
+
+.plan-fullscreen {
+    position: absolute !important;
+    top: 16px !important;
+    bottom: 80px !important;
+    left: 16px !important;
+    right: 16px !important;
+    height: auto !important;
+    z-index: 80 !important;
 }
 
-// Сохраняем историю чата
-function saveChatHistory() {
-    // Храним максимум 100 сообщений чтобы не переполнить localStorage
-    if (chatHistory.length > 100) chatHistory = chatHistory.slice(-100);
-    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(chatHistory));
+::-webkit-scrollbar { width: 0px; background: transparent; }
+.content-layer { z-index: 10; position: relative; }
+
+/* Drag handle маркер у задач */
+.drag-handle {
+    cursor: grab;
+    color: rgba(120, 120, 120, 0.5);
+    padding: 4px;
+}
+.drag-handle:active { cursor: grabbing; }
+
+/* Стилизация перетаскиваемого элемента */
+.sortable-ghost {
+    opacity: 0.4;
+    background: rgba(255, 255, 255, 0.15) !important;
+    border: 2px dashed rgba(255, 255, 255, 0.5) !important;
 }
 
-// Форматируем время сообщения
-function formatMessageTime(isoString) {
-    const date = new Date(isoString);
-    return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+/* Визуальный отклик при наведении драга над целью сброса (задача/заметка/папка/медиа) */
+.drag-over {
+    transform: translateY(-2px) scale(1.015);
+    box-shadow: 0 10px 24px rgba(0,0,0,0.12), inset 0 0 0 2px rgba(255,255,255,0.75) !important;
 }
 
-// Добавляем сообщение в историю и рендерим
-function addMessage(role, content, time = new Date().toISOString()) {
-    const message = { role, content, time };
-    chatHistory.push(message);
-    saveChatHistory();
-    renderMessage(message);
-    scrollChatToBottom();
+/* Горизонтальный список папок заметок — скрытый скролл, доступен touch и колесо мыши */
+#foldersList {
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    touch-action: pan-x;
+}
+#foldersList::-webkit-scrollbar { display: none; }
+.folder-pill { position: relative; }
+
+/* Индикатор активной записи голоса */
+.voice-listening {
+    box-shadow: 0 0 0 3px rgba(20,184,166,0.25), 0 0 20px rgba(20,184,166,0.35) !important;
 }
 
-// Рендерим одно сообщение
-function renderMessage(message) {
-    const container = document.getElementById('chatMessages');
-    if (!container) return;
-
-    // Убираем приветствие-заглушку если оно есть
-    const placeholder = container.querySelector('.chat-placeholder');
-    if (placeholder) placeholder.remove();
-
-    const wrapper = document.createElement('div');
-    wrapper.className = message.role === 'user' ? 'flex justify-end' : 'flex justify-start';
-
-    const isUser = message.role === 'user';
-    wrapper.innerHTML = `
-        <div>
-            <div class="${isUser ? 'chat-bubble-user' : 'chat-bubble-ai'}">${escapeHtml(message.content)}</div>
-            <div class="chat-time ${isUser ? 'text-right' : 'text-left'}">${formatMessageTime(message.time)}</div>
-        </div>
-    `;
-    container.appendChild(wrapper);
+/* Выделение текста — разрешаем везде кроме кнопок и иконок */
+button, i[data-lucide], .drag-handle, .mic-btn, .circle-check {
+    user-select: none;
+    -webkit-user-select: none;
 }
 
-// Рендерим всю историю чата
-function renderChatHistory() {
-    const container = document.getElementById('chatMessages');
-    if (!container) return;
-
-    container.innerHTML = '';
-
-    if (chatHistory.length === 0) {
-        container.innerHTML = `
-            <div class="chat-placeholder text-center py-16 text-gray-500">
-                <div class="text-5xl mb-4">✨</div>
-                <p class="text-sm font-medium">Привет! Я ваш личный помощник.</p>
-                <p class="text-xs mt-2 opacity-70">Спросите про план дня, цели или просто поговорим.</p>
-            </div>
-        `;
-        return;
-    }
-
-    chatHistory.forEach(renderMessage);
-    scrollChatToBottom();
+/* Текстовый контент — всегда выделяем */
+.chat-bubble-user, .chat-bubble-ai,
+.task-item span, .note-card h4, .note-card p,
+.media-row span, .goal-card p,
+#goalMicrotaskList span {
+    user-select: text;
+    -webkit-user-select: text;
+    cursor: text;
+}
+.truncate-2-lines {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
 }
 
-// Скролл вниз
-function scrollChatToBottom() {
-    const container = document.getElementById('chatMessages');
-    if (container) container.scrollTop = container.scrollHeight;
+/* ==============================================
+   ЧАТ С ИИ-ПОМОЩНИКОМ
+   ============================================== */
+
+/* Пузырь сообщения пользователя */
+.chat-bubble-user {
+    background: rgba(20, 184, 166, 0.2);
+    border: 1px solid rgba(20, 184, 166, 0.3);
+    border-radius: 18px 18px 4px 18px;
+    padding: 10px 14px;
+    max-width: 82%;
+    margin-left: auto;
+    color: #1a1a1a;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    word-break: break-word;
 }
 
-// Показываем индикатор печатания
-function showTypingIndicator() {
-    const container = document.getElementById('chatMessages');
-    if (!container) return;
-
-    const indicator = document.createElement('div');
-    indicator.id = 'typingIndicator';
-    indicator.className = 'flex justify-start';
-    indicator.innerHTML = `
-        <div class="chat-bubble-ai">
-            <div class="typing-indicator">
-                <span></span><span></span><span></span>
-            </div>
-        </div>
-    `;
-    container.appendChild(indicator);
-    scrollChatToBottom();
+/* Пузырь сообщения ИИ */
+.chat-bubble-ai {
+    background: rgba(255, 255, 255, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    border-radius: 18px 18px 18px 4px;
+    padding: 10px 14px;
+    max-width: 88%;
+    color: #1a1a1a;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    word-break: break-word;
 }
 
-// Убираем индикатор печатания
-function hideTypingIndicator() {
-    document.getElementById('typingIndicator')?.remove();
+.dark-glass .chat-bubble-ai {
+    background: rgba(255, 255, 255, 0.1) !important;
+    color: white !important;
 }
 
-// Отправка сообщения в чат
-async function sendChatMessage() {
-    const input = document.getElementById('chatInput');
-    const text = input?.value.trim();
-    if (!text) return;
-
-    const serverUrl = localStorage.getItem('server_url');
-    if (!serverUrl) {
-        showAppDialog({
-            title: 'Сервер не настроен',
-            message: 'Укажите адрес сервера в Настройках, чтобы использовать ИИ-помощника.',
-            confirmText: 'Открыть настройки',
-            onConfirm: () => openPanel('settingsPanel')
-        });
-        return;
-    }
-
-    input.value = '';
-    addMessage('user', text);
-
-    // Показываем что ИИ печатает
-    const statusEl = document.getElementById('aiStatusText');
-    if (statusEl) statusEl.innerText = 'Думает...';
-    showTypingIndicator();
-
-    try {
-        // Отправляем историю для контекста (последние 10 сообщений)
-        const recentHistory = chatHistory.slice(-10).map(m => ({
-            role: m.role,
-            content: m.content
-        }));
-
-        const result = await sendToAI(text, recentHistory);
-        hideTypingIndicator();
-
-        const rawReply = result.reply || 'Не удалось получить ответ';
-        const { text: replyText, actions } = parseAIResponse(rawReply);
-
-        // Показываем текст ответа
-        addMessage('assistant', replyText || rawReply);
-
-        if (statusEl) statusEl.innerText = 'Готов помочь';
-
-        // Выполняем команды (добавление задач)
-        const added = executeAIActions(actions);
-        if (added.length > 0) {
-            // Показываем подтверждение для каждой добавленной задачи
-            added.forEach(item => {
-                const dateLabel = formatDateForUser(item.date);
-                addMessage('assistant', `✅ Добавила в план на ${dateLabel}: "${item.text}"`);
-            });
-            // Скрываем зону предложений если была
-            document.getElementById('suggestionsZone')?.classList.add('hidden');
-        }
-
-        // Озвучиваем если включён голосовой режим
-        if (isVoiceReplyEnabled) speakText(replyText || rawReply);
-
-    } catch (err) {
-        hideTypingIndicator();
-        if (statusEl) statusEl.innerText = 'Ошибка соединения';
-        addMessage('assistant', `Не удалось связаться с сервером: ${err.message}. Проверьте настройки подключения.`);
-    }
+.dark-glass .chat-bubble-user {
+    background: rgba(20, 184, 166, 0.25) !important;
+    color: white !important;
 }
 
-// Парсим ответ ИИ — извлекаем текст и JSON-команды
-function parseAIResponse(rawReply) {
-    const actionsMatch = rawReply.match(/<ACTIONS>([\s\S]*?)<\/ACTIONS>/);
-    const text = rawReply.replace(/<ACTIONS>[\s\S]*?<\/ACTIONS>/g, '').trim();
-    let actions = [];
-
-    if (actionsMatch) {
-        try {
-            actions = JSON.parse(actionsMatch[1].trim());
-        } catch (e) {
-            console.warn('Не удалось распарсить ACTIONS:', e);
-        }
-    }
-
-    return { text, actions };
+/* Пузырь сообщения с ошибкой */
+.chat-bubble-error {
+    background: rgba(255, 200, 200, 0.5);
+    border: 1px solid rgba(255, 100, 100, 0.3);
+    border-radius: 18px 18px 4px 18px;
+    padding: 10px 14px;
+    max-width: 82%;
+    margin-left: auto;
+    color: #c0392b;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    word-break: break-word;
 }
 
-// Выполняем команды от ИИ
-function executeAIActions(actions) {
-    if (!actions || actions.length === 0) return [];
-    const added = [];
-
-    actions.forEach(action => {
-        if (action.type === 'add_task' && action.text) {
-            const date = action.date || activeDate;
-            if (!AppData.tasksByDate[date]) AppData.tasksByDate[date] = [];
-            AppData.tasksByDate[date].push({ id: createId(), text: action.text, done: false });
-            added.push({ text: action.text, date });
-        }
-    });
-
-    if (added.length > 0) {
-        saveDb();
-        renderDailyPlan();
-        setupCalendar();
-    }
-
-    return added;
+.dark-glass .chat-bubble-error {
+    background: rgba(255, 100, 100, 0.15) !important;
+    color: #ff9a9a !important;
+}
+.chat-time {
+    font-size: 0.65rem;
+    color: rgba(100, 100, 100, 0.6);
+    margin-top: 3px;
 }
 
-// Форматируем дату для отображения пользователю
-function formatDateForUser(dateStr) {
-    const date = parseDateString(dateStr);
-    if (!date) return dateStr;
-    const today = getTodayString();
-    const tomorrow = formatDateLocal(new Date(Date.now() + 86400000));
-    if (dateStr === today) return 'сегодня';
-    if (dateStr === tomorrow) return 'завтра';
-    return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+/* Карточка предложения задачи от ИИ */
+.suggestion-card {
+    background: rgba(255, 255, 255, 0.6);
+    border: 1px solid rgba(20, 184, 166, 0.3);
+    border-radius: 12px;
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    transition: all 0.2s;
 }
 
-// Показываем карточки предложений
-function showSuggestions(suggestions) {
-    pendingSuggestions = suggestions;
-    const zone = document.getElementById('suggestionsZone');
-    const list = document.getElementById('suggestionsList');
-    if (!zone || !list) return;
-
-    list.innerHTML = '';
-    suggestions.forEach((text, index) => {
-        const card = document.createElement('div');
-        card.className = 'suggestion-card';
-        card.id = `suggestion-${index}`;
-        card.innerHTML = `
-            <span class="text-sm text-gray-800 flex-1">${escapeHtml(text)}</span>
-            <div class="flex gap-2 shrink-0">
-                <button class="px-3 py-1 bg-teal-500/20 text-teal-700 rounded-full text-xs font-bold active:scale-90 transition-transform hover:bg-teal-500/30">
-                    + В план
-                </button>
-                <button class="px-2 py-1 text-gray-400 rounded-full text-xs active:scale-90 transition-transform hover:text-gray-600">
-                    ✕
-                </button>
-            </div>
-        `;
-        card.querySelector('button:first-of-type').addEventListener('click', () => acceptSuggestion(index, text));
-        card.querySelector('button:last-of-type').addEventListener('click', () => dismissSuggestion(index));
-        list.appendChild(card);
-    });
-
-    zone.classList.remove('hidden');
+.dark-glass .suggestion-card {
+    background: rgba(20, 184, 166, 0.12) !important;
 }
 
-// Принять предложение — добавить в план дня
-function acceptSuggestion(index, text) {
-    if (!AppData.tasksByDate[activeDate]) AppData.tasksByDate[activeDate] = [];
-    AppData.tasksByDate[activeDate].push({ id: createId(), text, done: false });
-    saveDb();
-    renderDailyPlan();
-    setupCalendar();
-
-    // Визуально помечаем карточку как принятую
-    const card = document.getElementById(`suggestion-${index}`);
-    if (card) {
-        card.classList.add('accepted');
-        card.querySelector('button:first-of-type').innerText = '✓ Добавлено';
-    }
-
-    // Сообщаем ИИ что задача принята
-    addMessage('assistant', `✅ Добавила в план: "${text}"`);
+.suggestion-card.accepted {
+    opacity: 0.4;
+    pointer-events: none;
 }
 
-// Отклонить предложение
-function dismissSuggestion(index) {
-    const card = document.getElementById(`suggestion-${index}`);
-    if (card) card.remove();
-
-    // Если все карточки убраны — скрываем зону
-    const list = document.getElementById('suggestionsList');
-    if (list && list.children.length === 0) {
-        document.getElementById('suggestionsZone')?.classList.add('hidden');
-    }
+/* Индикатор печатания ИИ */
+.typing-indicator {
+    display: flex;
+    gap: 4px;
+    padding: 12px 16px;
+    align-items: center;
 }
-
-// Голосовой ответ ИИ (SpeechSynthesis)
-function speakText(text) {
-    if (!('speechSynthesis' in window)) return;
-    if (isSpeaking) window.speechSynthesis.cancel();
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'ru-RU';
-    utterance.rate = 1.0;
-    utterance.pitch = 1.0;
-
-    // Пробуем найти русский голос
-    const voices = window.speechSynthesis.getVoices();
-    const ruVoice = voices.find(v => v.lang.startsWith('ru'));
-    if (ruVoice) utterance.voice = ruVoice;
-
-    utterance.onstart = () => { isSpeaking = true; };
-    utterance.onend = () => { isSpeaking = false; };
-    utterance.onerror = () => { isSpeaking = false; };
-
-    window.speechSynthesis.speak(utterance);
+.typing-indicator span {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: rgba(100, 100, 100, 0.5);
+    animation: typingBounce 1.2s infinite ease-in-out;
 }
+.typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+.typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
 
-// Переключатель голосового ответа
-function toggleVoiceReply() {
-    isVoiceReplyEnabled = !isVoiceReplyEnabled;
-    const btn = document.getElementById('voiceReplyBtn');
-    if (!btn) return;
-
-    if (isVoiceReplyEnabled) {
-        btn.innerHTML = '<i data-lucide="volume-2" class="w-5 h-5 text-teal-500"></i>';
-        btn.title = 'Голосовой ответ включён';
-    } else {
-        btn.innerHTML = '<i data-lucide="volume-x" class="w-5 h-5"></i>';
-        btn.title = 'Голосовой ответ выключен';
-        if (isSpeaking) window.speechSynthesis.cancel();
-    }
-    lucide.createIcons();
+@keyframes typingBounce {
+    0%, 60%, 100% { transform: translateY(0); }
+    30% { transform: translateY(-6px); }
 }
-
-// Открываем чат — загружаем историю и при первом открытии запрашиваем план
-function openAiChat() {
-    loadChatHistory();
-    renderChatHistory();
-    openPanel('aiChatPanel');
-
-    // Если история пуста — приветствие с анализом целей
-    if (chatHistory.length === 0) {
-        setTimeout(() => greetUser(), 600);
-    }
-
-    // Фокус на поле ввода
-    setTimeout(() => document.getElementById('chatInput')?.focus(), 400);
-}
-
-// Автоматическое приветствие при первом открытии
-async function greetUser() {
-    const serverUrl = localStorage.getItem('server_url');
-    if (!serverUrl) {
-        addMessage('assistant', 'Привет! 👋 Я ваш личный планировщик-помощник. Для начала работы укажите адрес сервера в Настройках — это займёт минуту.');
-        return;
-    }
-
-    const statusEl = document.getElementById('aiStatusText');
-    if (statusEl) statusEl.innerText = 'Анализирую ваши цели...';
-    showTypingIndicator();
-
-    try {
-        const result = await sendToAI(
-            'Поздоровайся и кратко проанализируй мои текущие цели и план на сегодня. Если есть задачи на сегодня — похвали за активность. Если плана нет — предложи 2-3 конкретных шага по ближайшей цели с дедлайном. Будь краткой и дружелюбной. Не добавляй задачи сама — только предлагай.',
-            []
-        );
-        hideTypingIndicator();
-        const rawReply = result.reply || 'Привет! Готова помочь с планированием.';
-        const { text: replyText } = parseAIResponse(rawReply);
-        addMessage('assistant', replyText || rawReply);
-        if (statusEl) statusEl.innerText = 'Готов помочь';
-        if (isVoiceReplyEnabled) speakText(replyText || rawReply);
-    } catch {
-        hideTypingIndicator();
-        addMessage('assistant', 'Привет! 👋 Готова помочь с планированием. Что делаем сегодня?');
-        if (statusEl) statusEl.innerText = 'Готов помочь';
-    }
-}
-
-// Переопределяем старую функцию отправки ИИ-запроса —
-// теперь она открывает чат вместо модала
-sendAiRequest = function sendAiRequestNew() {
-    const input = document.getElementById('aiTaskInput');
-    const val = input?.value.trim();
-    input && (input.value = '');
-    collapseToMicOnly();
-    openAiChat();
-
-    // Если был текст — сразу отправляем его
-    if (val) {
-        setTimeout(() => {
-            const chatInput = document.getElementById('chatInput');
-            if (chatInput) {
-                chatInput.value = val;
-                sendChatMessage();
-            }
-        }, 400);
-    }
-}
-
-// Enter в поле чата
-document.addEventListener('DOMContentLoaded', () => {
-    document.getElementById('chatInput')?.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') sendChatMessage();
-    });
-});
