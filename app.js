@@ -1931,6 +1931,8 @@ async function processAIRequest(text) {
                 if (item.type === 'note')       return `📝 В заметки (${item.folder}): "${item.text}"`;
                 if (item.type === 'microtask')  return `🎯 Шаг в цель "${item.goalTitle}": "${item.text}"`;
                 if (item.type === 'moved_task') return `📅 Перенесла "${item.text}" → ${formatDateForUser(item.to)}`;
+                if (item.type === 'media')      return `🎬 В Полку досуга (${item.tabLabel}): "${item.title}"`;
+
                 return '';
             }).filter(Boolean);
             if (lines.length) addMessage('assistant', lines.join('\n'));
@@ -2033,6 +2035,19 @@ function executeAIActions(actions) {
             }
         }
 
+        if (action.type === 'add_media' && action.title) {
+            const tabAliases = {
+                'books': 'books', 'книги': 'books', 'книга': 'books',
+                'movies': 'movies', 'фильмы': 'movies', 'фильм': 'movies',
+                'series': 'series', 'сериалы': 'series', 'сериал': 'series'
+            };
+            const tab = tabAliases[(action.tab || '').toLowerCase()] || 'movies';
+            if (!AppData.media[tab]) AppData.media[tab] = [];
+            AppData.media[tab].push({ id: createId(), title: action.title });
+            const tabNames = { books: 'Книги 📚', movies: 'Фильмы 🎬', series: 'Сериалы 🍿' };
+            added.push({ type: 'media', title: action.title, tabLabel: tabNames[tab] || tab });
+        }
+
         if (action.type === 'move_task' && action.text && action.to) {
             const fromDate = action.from || activeDate;
             const fromTasks = AppData.tasksByDate[fromDate] || [];
@@ -2055,6 +2070,7 @@ function executeAIActions(actions) {
         setupCalendar();
         renderNotes();
         renderGoalsWidget();
+        renderMedia();
     }
 
     return added;

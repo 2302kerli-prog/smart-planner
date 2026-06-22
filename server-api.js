@@ -186,6 +186,10 @@ function buildContext() {
             : `${dateStr}: свободно`);
     }
 
+    const mediaBooks  = (AppData.media?.books  || []).map(i => i.title).join(', ') || 'пусто';
+    const mediaMovies = (AppData.media?.movies || []).map(i => i.title).join(', ') || 'пусто';
+    const mediaSeries = (AppData.media?.series || []).map(i => i.title).join(', ') || 'пусто';
+
     return `Дата: ${today}
 Выполнено задач сегодня: ${doneTasks} из ${todayTasks.length}${profileText}
 
@@ -196,7 +200,12 @@ ${goalsText || 'Цели не заданы'}
 ${todayText}
 
 ЗАГРУЗКА БЛИЖАЙШИХ 7 ДНЕЙ:
-${upcomingLines.join('\n')}`;
+${upcomingLines.join('\n')}
+
+ПОЛКА ДОСУГА:
+Книги 📚: ${mediaBooks}
+Фильмы 🎬: ${mediaMovies}
+Сериалы 🍿: ${mediaSeries}`;
 }
 
 // Отправляем сообщение ИИ
