@@ -1832,6 +1832,8 @@ async function sendChatMessage() {
                     addMessage('assistant', `✅ Добавила в план на ${dateLabel}: "${item.text}"`);
                 } else if (item.type === 'note') {
                     addMessage('assistant', `📝 Записала в заметки (раздел "${item.folder}"): "${item.text}"`);
+                } else if (item.type === 'microtask') {
+                    addMessage('assistant', `🎯 Добавила шаг в цель "${item.goalTitle}": "${item.text}"`);
                 }
             });
             document.getElementById('suggestionsZone')?.classList.add('hidden');
@@ -1897,6 +1899,21 @@ function executeAIActions(actions) {
                 added.push({ type: 'note', text: action.text, folder: folder.name });
             }
         }
+
+        if (action.type === 'add_microtask' && action.text && action.goal) {
+            // Ищем цель по названию (частичное совпадение, регистронезависимо)
+            const goalQuery = action.goal.toLowerCase();
+            const goal = AppData.goals.find(g =>
+                g.title.toLowerCase().includes(goalQuery) ||
+                goalQuery.includes(g.title.toLowerCase())
+            );
+            if (goal) {
+                if (!goal.microtasks) goal.microtasks = [];
+                goal.microtasks.push({ id: createId(), text: action.text, done: false });
+                recalculateGoalProgress(goal);
+                added.push({ type: 'microtask', text: action.text, goalTitle: goal.title });
+            }
+        }
     });
 
     if (added.length > 0) {
@@ -1904,6 +1921,7 @@ function executeAIActions(actions) {
         renderDailyPlan();
         setupCalendar();
         renderNotes();
+        renderGoalsWidget();
     }
 
     return added;
