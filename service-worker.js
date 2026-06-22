@@ -103,20 +103,20 @@ self.addEventListener('notificationclick', (event) => {
 
     const action = event.notification.data?.action;
 
+    const notifData = event.notification.data || {};
+    const notifContext = notifData.context || '';
+
     event.waitUntil(
         clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-            // Если приложение уже открыто — просто переключаемся на него
             for (const client of clientList) {
                 if (client.url.includes(self.location.origin) && 'focus' in client) {
                     client.focus();
-                    // Передаём действие в приложение
-                    if (action) client.postMessage({ type: 'NOTIFICATION_ACTION', action });
+                    if (action) client.postMessage({ type: 'NOTIFICATION_ACTION', action, context: notifContext });
                     return;
                 }
             }
-            // Если закрыто — открываем
             if (clients.openWindow) {
-                return clients.openWindow('/');
+                return clients.openWindow(self.location.origin + '/smart-planner/');
             }
         })
     );

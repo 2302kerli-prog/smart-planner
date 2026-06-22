@@ -126,6 +126,23 @@ async function sendTestPush() {
     });
 }
 
+// Сохранить время вечернего пуша
+async function saveEveningPushTime() {
+    const input = document.getElementById('eveningPushTimeInput');
+    const time  = input?.value;
+    if (!time) return;
+    try {
+        await serverRequest('/settings/evening-push-time', {
+            method: 'POST',
+            body: JSON.stringify({ time })
+        });
+        const statusEl = document.getElementById('serverStatusText');
+        if (statusEl) { statusEl.textContent = '🌙 Вечерний пуш сохранён'; setTimeout(() => { statusEl.textContent = ''; }, 3000); }
+    } catch (e) {
+        alert('Не удалось сохранить: ' + e.message);
+    }
+}
+
 // ============================================================
 //  GEMINI ИИ-ПОМОЩНИК
 // ============================================================
@@ -157,6 +174,18 @@ function buildContext() {
         ? `\nПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ:\n${profileLines.join('\n')}`
         : '';
 
+    // Расписание на ближайшие 7 дней — ИИ видит загрузку и может предлагать даты
+    const upcomingLines = [];
+    for (let i = 1; i <= 7; i++) {
+        const d = new Date(today);
+        d.setDate(d.getDate() + i);
+        const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+        const dayTasks = AppData.tasksByDate[dateStr] || [];
+        upcomingLines.push(dayTasks.length
+            ? `${dateStr}: ${dayTasks.length} задач`
+            : `${dateStr}: свободно`);
+    }
+
     return `Дата: ${today}
 Выполнено задач сегодня: ${doneTasks} из ${todayTasks.length}${profileText}
 
@@ -164,7 +193,10 @@ function buildContext() {
 ${goalsText || 'Цели не заданы'}
 
 ПЛАН НА СЕГОДНЯ:
-${todayText}`;
+${todayText}
+
+ЗАГРУЗКА БЛИЖАЙШИХ 7 ДНЕЙ:
+${upcomingLines.join('\n')}`;
 }
 
 // Отправляем сообщение ИИ
@@ -218,15 +250,25 @@ function urlBase64ToUint8Array(base64String) {
     return outputArray;
 }
 
-// Слушаем сообщения от service worker (например, нажатие на уведомление)
+// Слушаем сообщения от service worker (нажатие на уведомление)
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.addEventListener('message', (event) => {
         if (event.data?.type === 'NOTIFICATION_ACTION') {
-            const action = event.data.action;
-            console.log('[App] Действие из уведомления:', action);
+            const { action, context } = event.data;
             if (action === 'open_planner') {
-                // Открываем приложение на главном экране
                 closePanel('settingsPanel');
+            } else if (action === 'open_ai_chat') {
+                // Вечернее уведомление → открываем чат и ИИ сама начинает разговор
+                openAiChat();
+                if (context === 'evening') {
+                    setTimeout(() => {
+                        const input = document.getElementById('chatInput');
+                        if (input && !input.value) {
+                            input.value = 'Подведи итоги моего дня как коуч';
+                            sendChatMessage();
+                        }
+                    }, 700);
+                }
             }
         }
     });

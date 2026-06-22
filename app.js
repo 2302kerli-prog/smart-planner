@@ -163,6 +163,7 @@ function initApp() {
     setupKeyboardListeners();
     setupBubbleInteraction();
     updateProfileDisplay();
+    setTimeout(checkAndCarryOverTasks, 800); // небольшая задержка чтобы UI прорисовался
 }
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -488,16 +489,21 @@ function renderDailyPlan() {
 
         item.innerHTML = `
             ${goalLine}
-            <div class="flex items-center gap-3 flex-1 min-w-0 pr-12">
+            <div class="flex items-center gap-3 flex-1 min-w-0 ${task.goalId ? 'pl-1' : ''}">
                 <div class="drag-handle shrink-0 text-gray-400 select-none">
                     <i data-lucide="grip-vertical" class="w-5 h-5 pointer-events-none"></i>
                 </div>
-                <span class="handwriting text-2xl text-gray-800 transition-all truncate select-text ${task.goalId ? 'pl-1' : ''}" onclick="toggleTask(${task.id})">
+                <span class="handwriting text-2xl text-gray-800 transition-all truncate select-text" onclick="toggleTask(${task.id})">
                     ${index + 1}. ${escapeHtml(task.text)}
                 </span>
             </div>
-            <div class="circle-check w-6 h-6 rounded-full border-2 border-white bg-transparent shadow-inner transition-colors flex shrink-0 items-center justify-center cursor-pointer" onclick="toggleTask(${task.id})">
-                ${task.done ? '<div class="w-3 h-3 bg-white rounded-full"></div>' : ''}
+            <div class="flex items-center gap-0.5 shrink-0">
+                <button class="p-1.5 text-gray-400 active:text-gray-600 transition-colors" onclick="openTaskActions(event, ${task.id})" title="Действия">
+                    <i data-lucide="more-vertical" class="w-4 h-4 pointer-events-none"></i>
+                </button>
+                <div class="circle-check w-6 h-6 rounded-full border-2 border-white bg-transparent shadow-inner transition-colors flex shrink-0 items-center justify-center cursor-pointer" onclick="toggleTask(${task.id})">
+                    ${task.done ? '<div class="w-3 h-3 bg-white rounded-full"></div>' : ''}
+                </div>
             </div>
         `;
         taskList.appendChild(item);
@@ -568,6 +574,118 @@ function toggleTask(taskId) {
     saveDb();
     renderDailyPlan();
     renderGoalsWidget();
+}
+
+/* ==============================================
+   ДЕЙСТВИЯ С ЗАДАЧАМИ: МЕНЮ, УДАЛЕНИЕ, ПЕРЕНОС
+   ============================================== */
+function openTaskActions(event, taskId) {
+    event.stopPropagation();
+    // Закрываем все открытые меню
+    document.querySelectorAll('.task-actions-menu').forEach(m => m.remove());
+
+    const btn = event.currentTarget;
+    const rect = btn.getBoundingClientRect();
+
+    const menu = document.createElement('div');
+    menu.className = 'task-actions-menu fixed z-[150] glass-panel rounded-2xl shadow-xl overflow-hidden min-w-[150px] text-sm';
+    menu.style.top  = (rect.bottom + 6) + 'px';
+    menu.style.right = (window.innerWidth - rect.right) + 'px';
+    menu.innerHTML = `
+        <button class="w-full text-left px-4 py-3 flex items-center gap-3 text-gray-700 active:bg-white/60" onclick="openMoveTaskPicker(${taskId}); this.closest('.task-actions-menu').remove()">
+            <i data-lucide="calendar-days" class="w-4 h-4 text-teal-600 pointer-events-none"></i> Перенести
+        </button>
+        <div class="border-t border-white/30 mx-3"></div>
+        <button class="w-full text-left px-4 py-3 flex items-center gap-3 text-red-500 active:bg-red-50/50" onclick="deleteTask(${taskId}); this.closest('.task-actions-menu').remove()">
+            <i data-lucide="trash-2" class="w-4 h-4 pointer-events-none"></i> Удалить
+        </button>
+    `;
+    document.body.appendChild(menu);
+    lucide.createIcons({ nodes: [menu] });
+
+    setTimeout(() => {
+        document.addEventListener('click', function closeMenu(e) {
+            if (!menu.contains(e.target)) {
+                menu.remove();
+                document.removeEventListener('click', closeMenu);
+            }
+        });
+    }, 0);
+}
+
+function deleteTask(taskId) {
+    const tasks = AppData.tasksByDate[activeDate] || [];
+    AppData.tasksByDate[activeDate] = tasks.filter(t => t.id !== taskId);
+    saveDb();
+    renderDailyPlan();
+}
+
+function openMoveTaskPicker(taskId) {
+    taskMoveId = taskId;
+    const input = document.getElementById('goalDatePickerInput');
+    input.value = activeDate;
+    input.min = getTodayString();
+    document.getElementById('goalDatePickerModal').querySelector('h3').textContent = 'На какой день перенести?';
+    document.getElementById('goalDatePickerModal').classList.remove('hidden');
+}
+
+function moveTaskToDate(taskId, targetDate) {
+    const tasks = AppData.tasksByDate[activeDate] || [];
+    const idx   = tasks.findIndex(t => t.id === taskId);
+    if (idx === -1) return;
+
+    const [task] = tasks.splice(idx, 1);
+    if (!AppData.tasksByDate[targetDate]) AppData.tasksByDate[targetDate] = [];
+    // При переносе сбрасываем done
+    AppData.tasksByDate[targetDate].push({ ...task, done: false });
+    saveDb();
+    renderDailyPlan();
+    setupCalendar();
+}
+
+/* ==============================================
+   АВТОПЕРЕНОС НЕВЫПОЛНЕННЫХ ЗАДАЧ ПРОШЛОГО ДНЯ
+   ============================================== */
+function checkAndCarryOverTasks() {
+    const today     = getTodayString();
+    const lastCheck = localStorage.getItem('carry_over_check') || '';
+    if (lastCheck === today) return; // уже проверяли сегодня
+
+    // Ищем невыполненные задачи за последние 7 дней (кроме сегодня)
+    const overdueTasks = [];
+    for (let i = 1; i <= 7; i++) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const dateStr = formatDateLocal(d);
+        const dayTasks = AppData.tasksByDate[dateStr] || [];
+        dayTasks.filter(t => !t.done).forEach(t => overdueTasks.push({ ...t, _fromDate: dateStr }));
+    }
+
+    localStorage.setItem('carry_over_check', today);
+    if (overdueTasks.length === 0) return;
+
+    const preview = overdueTasks.slice(0, 3).map(t => `• ${t.text}`).join('\n');
+    const extra   = overdueTasks.length > 3 ? `\n...и ещё ${overdueTasks.length - 3}` : '';
+
+    showAppDialog({
+        title: `${overdueTasks.length} незавершённых задач`,
+        message: `Перенести на сегодня?\n\n${preview}${extra}`,
+        confirmText: 'Перенести',
+        cancelText: 'Оставить',
+        onConfirm: () => {
+            if (!AppData.tasksByDate[today]) AppData.tasksByDate[today] = [];
+            overdueTasks.forEach(t => {
+                const { _fromDate, ...task } = t;
+                // Убираем из старой даты
+                AppData.tasksByDate[_fromDate] = (AppData.tasksByDate[_fromDate] || []).filter(x => x.id !== task.id);
+                // Добавляем сегодня (сбрасываем done)
+                AppData.tasksByDate[today].push({ ...task, id: createId(), done: false });
+            });
+            saveDb();
+            renderDailyPlan();
+            setupCalendar();
+        }
+    });
 }
 
 function addManualTask() {
@@ -724,6 +842,7 @@ function renderGoalMicrotasks(goal) {
 }
 
 let goalDatePickerData = null;
+let taskMoveId = null; // id задачи, ожидающей переноса
 function openGoalDatePicker(goalId, mtId, text) {
     goalDatePickerData = { goalId, mtId, text };
     document.getElementById('goalDatePickerInput').value = activeDate;
@@ -737,7 +856,19 @@ function closeGoalDatePicker() {
 
 function submitGoalDatePicker() {
     const dateInput = document.getElementById('goalDatePickerInput').value;
-    if (!dateInput || !goalDatePickerData) return;
+    if (!dateInput) return;
+
+    // Режим переноса задачи
+    if (taskMoveId !== null) {
+        const id = taskMoveId;
+        taskMoveId = null;
+        moveTaskToDate(id, dateInput);
+        closeGoalDatePicker();
+        document.getElementById('goalDatePickerModal').querySelector('h3').textContent = 'Выберите дату';
+        return;
+    }
+
+    if (!goalDatePickerData) return;
 
     const { goalId, mtId, text } = goalDatePickerData;
     if (!AppData.tasksByDate[dateInput]) AppData.tasksByDate[dateInput] = [];
@@ -1796,9 +1927,10 @@ async function processAIRequest(text) {
         const added = executeAIActions(actions);
         if (added.length > 0) {
             const lines = added.map(item => {
-                if (item.type === 'task')      return `✅ В план на ${formatDateForUser(item.date)}: "${item.text}"`;
-                if (item.type === 'note')      return `📝 В заметки (${item.folder}): "${item.text}"`;
-                if (item.type === 'microtask') return `🎯 Шаг в цель "${item.goalTitle}": "${item.text}"`;
+                if (item.type === 'task')       return `✅ В план на ${formatDateForUser(item.date)}: "${item.text}"`;
+                if (item.type === 'note')       return `📝 В заметки (${item.folder}): "${item.text}"`;
+                if (item.type === 'microtask')  return `🎯 Шаг в цель "${item.goalTitle}": "${item.text}"`;
+                if (item.type === 'moved_task') return `📅 Перенесла "${item.text}" → ${formatDateForUser(item.to)}`;
                 return '';
             }).filter(Boolean);
             if (lines.length) addMessage('assistant', lines.join('\n'));
@@ -1888,7 +2020,6 @@ function executeAIActions(actions) {
         }
 
         if (action.type === 'add_microtask' && action.text && action.goal) {
-            // Ищем цель по названию (частичное совпадение, регистронезависимо)
             const goalQuery = action.goal.toLowerCase();
             const goal = AppData.goals.find(g =>
                 g.title.toLowerCase().includes(goalQuery) ||
@@ -1899,6 +2030,21 @@ function executeAIActions(actions) {
                 goal.microtasks.push({ id: createId(), text: action.text, done: false });
                 recalculateGoalProgress(goal);
                 added.push({ type: 'microtask', text: action.text, goalTitle: goal.title });
+            }
+        }
+
+        if (action.type === 'move_task' && action.text && action.to) {
+            const fromDate = action.from || activeDate;
+            const fromTasks = AppData.tasksByDate[fromDate] || [];
+            const query = action.text.toLowerCase();
+            const idx = fromTasks.findIndex(t =>
+                t.text.toLowerCase().includes(query) || query.includes(t.text.toLowerCase())
+            );
+            if (idx !== -1) {
+                const [task] = fromTasks.splice(idx, 1);
+                if (!AppData.tasksByDate[action.to]) AppData.tasksByDate[action.to] = [];
+                AppData.tasksByDate[action.to].push({ ...task, done: false });
+                added.push({ type: 'moved_task', text: task.text, from: fromDate, to: action.to });
             }
         }
     });
@@ -2252,11 +2398,21 @@ function confirmDeleteProfile(profileId) {
    ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ (данные для ИИ)
    ============================================== */
 function openUserProfile() {
+    // Показываем активный профиль (смена аккаунта)
+    const profiles = loadProfiles();
+    const pid      = getActiveProfileId();
+    const profile  = profiles.find(p => p.id === pid);
+    const upEmoji  = document.getElementById('upEmoji');
+    const upName   = document.getElementById('upName');
+    if (upEmoji) upEmoji.innerText = profile?.emoji || '👤';
+    if (upName)  upName.innerText  = profile?.name  || '—';
+
+    // Заполняем данные для ИИ
     const p = AppData.settings.userProfile || {};
-    const nameEl       = document.getElementById('profileNameInput');
-    const ageEl        = document.getElementById('profileAgeInput');
-    const occupEl      = document.getElementById('profileOccupationInput');
-    const contextEl    = document.getElementById('profileContextInput');
+    const nameEl    = document.getElementById('profileNameInput');
+    const ageEl     = document.getElementById('profileAgeInput');
+    const occupEl   = document.getElementById('profileOccupationInput');
+    const contextEl = document.getElementById('profileContextInput');
     if (nameEl)    nameEl.value    = p.name       || '';
     if (ageEl)     ageEl.value     = p.age        || '';
     if (occupEl)   occupEl.value   = p.occupation || '';
