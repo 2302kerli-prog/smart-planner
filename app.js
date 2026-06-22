@@ -251,11 +251,10 @@ function resetAllData() {
    ============================================== */
 function updateThemeBasedOnProgress(percent) {
     const body = document.body;
-    body.classList.remove('theme-red', 'theme-orange', 'theme-yellow', 'theme-green');
-    if (percent < 30) body.classList.add('theme-red');
-    else if (percent < 50) body.classList.add('theme-orange');
-    else if (percent < 80) body.classList.add('theme-yellow');
-    else body.classList.add('theme-green');
+    body.classList.remove('theme-red', 'theme-orange', 'theme-green');
+    if (percent < 50)      body.classList.add('theme-red');
+    else if (percent < 80) body.classList.add('theme-orange');
+    else                   body.classList.add('theme-green');
 }
 
 /* ==============================================
