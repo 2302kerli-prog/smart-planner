@@ -307,7 +307,21 @@ body.dark-glass.theme-green .bubble {
     box-shadow: 0 0 0 3px rgba(20,184,166,0.25), 0 0 20px rgba(20,184,166,0.35) !important;
 }
 
-/* Обрезка названия цели в 2 строки */
+/* Выделение текста — разрешаем везде кроме кнопок и иконок */
+button, i[data-lucide], .drag-handle, .mic-btn, .circle-check {
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+/* Текстовый контент — всегда выделяем */
+.chat-bubble-user, .chat-bubble-ai,
+.task-item span, .note-card h4, .note-card p,
+.media-row span, .goal-card p,
+#goalMicrotaskList span {
+    user-select: text;
+    -webkit-user-select: text;
+    cursor: text;
+}
 .truncate-2-lines {
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -356,7 +370,24 @@ body.dark-glass.theme-green .bubble {
     color: white !important;
 }
 
-/* Метка времени сообщения */
+/* Пузырь сообщения с ошибкой */
+.chat-bubble-error {
+    background: rgba(255, 200, 200, 0.5);
+    border: 1px solid rgba(255, 100, 100, 0.3);
+    border-radius: 18px 18px 4px 18px;
+    padding: 10px 14px;
+    max-width: 82%;
+    margin-left: auto;
+    color: #c0392b;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+.dark-glass .chat-bubble-error {
+    background: rgba(255, 100, 100, 0.15) !important;
+    color: #ff9a9a !important;
+}
 .chat-time {
     font-size: 0.65rem;
     color: rgba(100, 100, 100, 0.6);
