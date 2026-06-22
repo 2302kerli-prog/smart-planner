@@ -4,7 +4,7 @@
 //  Получает push-уведомления от сервера и показывает их.
 // ============================================================
 
-const CACHE_NAME = 'smart-planner-v2';
+const CACHE_NAME = 'smart-planner-v3';
 // Используем BASE чтобы правильно работать на GitHub Pages (/smart-planner/)
 // и на любом другом хостинге одновременно
 const BASE = new URL('./', self.location).href;
