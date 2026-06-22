@@ -265,11 +265,14 @@ body.dark-glass.theme-green .bubble {
 .slide-panel.active { bottom: 0; }
 
 .plan-fullscreen {
-    position: absolute !important;
-    top: 16px !important;
-    bottom: 80px !important;
-    left: 16px !important;
-    right: 16px !important;
+    position: fixed !important;
+    top: 70px !important;
+    bottom: 24px !important;
+    left: 50% !important;
+    right: auto !important;
+    transform: translateX(-50%) !important;
+    width: calc(100vw - 32px) !important;
+    max-width: 416px !important;
     height: auto !important;
     z-index: 80 !important;
 }

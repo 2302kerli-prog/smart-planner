@@ -201,8 +201,8 @@ function setupKeyboardListeners() {
     document.getElementById('mediaInput').addEventListener('keydown', (e) => {
         if (e.key === 'Enter') addMediaItem();
     });
-    document.getElementById('aiTaskInput').addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') sendAiRequest();
+    document.getElementById('aiTaskInput')?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAiRequest(); }
     });
     document.getElementById('profileNameInput')?.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') confirmCreateProfile();
@@ -368,6 +368,11 @@ function closeAppDialog() {
    ============================================== */
 let activeRecognition = null;
 
+function autoResizeTextarea(el) {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+}
+
 function startVoiceInput(targetId, onDone) {
     const target = document.getElementById(targetId);
     if (!target) return;
@@ -387,29 +392,46 @@ function startVoiceInput(targetId, onDone) {
     const recognition = new SpeechRecognition();
     activeRecognition = recognition;
     recognition.lang = 'ru-RU';
-    recognition.interimResults = false;
+    recognition.interimResults = true;
     recognition.maxAlternatives = 1;
+    recognition.continuous = false;
     target.classList.add('voice-listening');
 
+    const baseText = target.value; // текст до начала диктовки
+    let finalText = '';             // накопленный финальный текст
+
     recognition.onresult = (event) => {
-        const transcript = event.results?.[0]?.[0]?.transcript || '';
-        if (transcript) {
-            const separator = target.value.trim() ? ' ' : '';
-            target.value = target.value + separator + transcript;
-            target.dispatchEvent(new Event('change', { bubbles: true }));
+        let interim = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+            const t = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+                finalText += (finalText ? ' ' : '') + t;
+            } else {
+                interim += t;
+            }
         }
-        onDone?.(transcript);
+        const sep = baseText.trim() ? ' ' : '';
+        const preview = (finalText + (finalText && interim ? ' ' : '') + interim).trim();
+        target.value = baseText + (preview ? sep + preview : '');
+        if (target.tagName === 'TEXTAREA') autoResizeTextarea(target);
     };
-    recognition.onerror = () => {
+
+    recognition.onerror = (e) => {
+        if (e.error === 'no-speech') return; // тишина — не ошибка
         showAppDialog({
             title: 'Не расслышала',
-            message: 'Попробуйте еще раз или введите текст вручную.',
+            message: 'Попробуйте ещё раз или введите текст вручную.',
             confirmText: 'Ок'
         });
     };
     recognition.onend = () => {
         target.classList.remove('voice-listening');
         activeRecognition = null;
+        // Убираем промежуточный текст — оставляем только финальный
+        const sep = baseText.trim() && finalText ? ' ' : '';
+        target.value = baseText + sep + finalText;
+        if (target.tagName === 'TEXTAREA') autoResizeTextarea(target);
+        onDone?.(finalText);
     };
     recognition.start();
 }
@@ -437,13 +459,16 @@ function togglePlanFullscreen() {
 
     isPlanFullscreen = !isPlanFullscreen;
 
+    const aiInputBar = document.getElementById('aiInputBar');
     if (isPlanFullscreen) {
         dailyBlock.classList.add('plan-fullscreen');
         goalsContainer.classList.add('hidden');
+        aiInputBar?.classList.add('hidden');
         icon.setAttribute('data-lucide', 'minimize-2');
     } else {
         dailyBlock.classList.remove('plan-fullscreen');
         goalsContainer.classList.remove('hidden');
+        aiInputBar?.classList.remove('hidden');
         icon.setAttribute('data-lucide', 'maximize-2');
     }
     lucide.createIcons();
@@ -1932,6 +1957,7 @@ async function processAIRequest(text) {
                 if (item.type === 'microtask')  return `🎯 Шаг в цель "${item.goalTitle}": "${item.text}"`;
                 if (item.type === 'moved_task') return `📅 Перенесла "${item.text}" → ${formatDateForUser(item.to)}`;
                 if (item.type === 'media')      return `🎬 В Полку досуга (${item.tabLabel}): "${item.title}"`;
+                if (item.type === 'cleaned')    return `🧹 Удалила ${item.count} мусорных задач`;
 
                 return '';
             }).filter(Boolean);
@@ -2033,6 +2059,22 @@ function executeAIActions(actions) {
                 recalculateGoalProgress(goal);
                 added.push({ type: 'microtask', text: action.text, goalTitle: goal.title });
             }
+        }
+
+        if (action.type === 'clean_tasks') {
+            // Удаляем задачи, которые не содержат ни одной буквы (мусор, случайные символы)
+            const isJunk = (text) => {
+                const letters = (text || '').match(/[а-яёa-zА-ЯЁA-Z]/g) || [];
+                return letters.length < 2;
+            };
+            const dates = action.dates || [activeDate];
+            let totalRemoved = 0;
+            dates.forEach(date => {
+                const before = (AppData.tasksByDate[date] || []).length;
+                AppData.tasksByDate[date] = (AppData.tasksByDate[date] || []).filter(t => !isJunk(t.text));
+                totalRemoved += before - AppData.tasksByDate[date].length;
+            });
+            if (totalRemoved > 0) added.push({ type: 'cleaned', count: totalRemoved });
         }
 
         if (action.type === 'add_media' && action.title) {
@@ -2257,7 +2299,7 @@ sendAiRequest = function sendAiRequestNew() {
 // Enter в поле чата
 document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('chatInput')?.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') sendChatMessage();
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); }
     });
 });
 

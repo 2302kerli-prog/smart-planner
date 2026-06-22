@@ -105,7 +105,7 @@
         </div>
 
         <!-- КНОПКА МИКРОФОНА И ВВОДА ИИ -->
-        <div class="absolute bottom-6 left-0 w-full px-6 flex justify-center z-50">
+        <div id="aiInputBar" class="absolute bottom-6 left-0 w-full px-6 flex justify-center z-50">
             <!-- Режим микрофона (Большой) -->
             <button id="micBtn" class="mic-btn w-20 h-20 rounded-full flex items-center justify-center text-white"
                     title="Нажмите — голос. Удержите — текстовый ввод">
@@ -113,13 +113,16 @@
             </button>
 
             <!-- Интерактивная панель ввода ИИ -->
-            <div id="textInputWrapper" class="hidden w-full flex items-center gap-2">
-                <div class="glass-panel flex-1 flex items-center h-14 px-3 gap-2">
-                    <button class="text-gray-500 active:scale-75 hover:text-gray-800" onclick="collapseToMicOnly()">
+            <div id="textInputWrapper" class="hidden w-full flex items-end gap-2">
+                <div class="glass-panel flex-1 flex items-end px-3 py-2 gap-2 min-h-[56px]">
+                    <button class="text-gray-500 active:scale-75 hover:text-gray-800 mb-1" onclick="collapseToMicOnly()">
                         <i data-lucide="chevron-down" class="w-6 h-6"></i>
                     </button>
-                    <input type="text" id="aiTaskInput" class="bg-transparent flex-1 h-full text-gray-800 text-base outline-none placeholder-gray-500" placeholder="Написать ИИ или нажать мик...">
-                    <button class="text-gray-500 active:scale-75 hover:text-teal-500" onclick="startVoiceInput('aiTaskInput')" title="Голосовой ввод">
+                    <textarea id="aiTaskInput" rows="1"
+                        class="bg-transparent flex-1 text-gray-800 text-base outline-none placeholder-gray-500 resize-none overflow-hidden leading-snug py-1 max-h-40"
+                        placeholder="Написать ИИ или нажать мик..."
+                        oninput="autoResizeTextarea(this)"></textarea>
+                    <button class="text-gray-500 active:scale-75 hover:text-teal-500 mb-1" onclick="startVoiceInput('aiTaskInput')" title="Голосовой ввод">
                         <i data-lucide="mic" class="w-5 h-5"></i>
                     </button>
                 </div>
@@ -517,12 +520,17 @@
 
             <!-- Поле ввода -->
             <div class="p-4 shrink-0 border-t border-white/20">
-                <div class="flex gap-2">
-                    <input type="text" id="chatInput" class="glass-panel flex-1 h-12 px-4 text-gray-800 text-sm outline-none placeholder-gray-500" placeholder="Написать помощнику...">
-                    <button onclick="startVoiceInput('chatInput')" class="h-12 w-12 glass-panel flex items-center justify-center text-gray-600 active:scale-90 transition-transform" title="Голосовой ввод">
+                <div class="flex items-end gap-2">
+                    <div class="glass-panel flex-1 flex items-end px-4 py-2 gap-2 min-h-[48px]">
+                        <textarea id="chatInput" rows="1"
+                            class="bg-transparent flex-1 text-gray-800 text-sm outline-none placeholder-gray-500 resize-none overflow-hidden leading-snug py-1 max-h-40"
+                            placeholder="Написать помощнику..."
+                            oninput="autoResizeTextarea(this)"></textarea>
+                    </div>
+                    <button onclick="startVoiceInput('chatInput')" class="h-12 w-12 glass-panel flex items-center justify-center text-gray-600 active:scale-90 transition-transform shrink-0" title="Голосовой ввод">
                         <i data-lucide="mic" class="w-5 h-5"></i>
                     </button>
-                    <button onclick="sendChatMessage()" class="h-12 w-12 glass-panel flex items-center justify-center text-teal-600 active:scale-90 transition-transform">
+                    <button onclick="sendChatMessage()" class="h-12 w-12 glass-panel flex items-center justify-center text-teal-600 active:scale-90 transition-transform shrink-0">
                         <i data-lucide="send" class="w-5 h-5"></i>
                     </button>
                 </div>
