@@ -1710,16 +1710,11 @@ function renderMessage(message) {
         const prevUserMsg = chatHistory.slice(0, msgIndex).reverse().find(m => m.role === 'user');
         if (prevUserMsg) {
             retryBtn.addEventListener('click', () => {
-                // Удаляем сообщение об ошибке из истории
                 chatHistory = chatHistory.filter(m => m.time !== message.time);
                 saveChatHistory();
                 wrapper.remove();
-                // Повторяем запрос
-                const chatInput = document.getElementById('chatInput');
-                if (chatInput) {
-                    chatInput.value = prevUserMsg.content;
-                    sendChatMessage();
-                }
+                // Повторяем запрос БЕЗ повторного добавления сообщения пользователя
+                processAIRequest(prevUserMsg.content);
             });
         }
     }
@@ -1780,7 +1775,46 @@ function hideTypingIndicator() {
     document.getElementById('typingIndicator')?.remove();
 }
 
-// Отправка сообщения в чат
+// Отправляет текст к ИИ и обрабатывает ответ — БЕЗ добавления сообщения пользователя.
+// Используется и при обычной отправке, и при повторе после ошибки.
+async function processAIRequest(text) {
+    const statusEl = document.getElementById('aiStatusText');
+    if (statusEl) statusEl.innerText = 'Думает...';
+    showTypingIndicator();
+
+    try {
+        const recentHistory = chatHistory.slice(-10).map(m => ({ role: m.role, content: m.content }));
+        const result = await sendToAI(text, recentHistory);
+        hideTypingIndicator();
+
+        const rawReply = result.reply || 'Не удалось получить ответ';
+        const { text: replyText, actions } = parseAIResponse(rawReply);
+
+        addMessage('assistant', replyText || rawReply);
+        if (statusEl) statusEl.innerText = 'Готов помочь';
+
+        const added = executeAIActions(actions);
+        if (added.length > 0) {
+            const lines = added.map(item => {
+                if (item.type === 'task')      return `✅ В план на ${formatDateForUser(item.date)}: "${item.text}"`;
+                if (item.type === 'note')      return `📝 В заметки (${item.folder}): "${item.text}"`;
+                if (item.type === 'microtask') return `🎯 Шаг в цель "${item.goalTitle}": "${item.text}"`;
+                return '';
+            }).filter(Boolean);
+            if (lines.length) addMessage('assistant', lines.join('\n'));
+            document.getElementById('suggestionsZone')?.classList.add('hidden');
+        }
+
+        if (isVoiceReplyEnabled) speakText(replyText || rawReply);
+
+    } catch (err) {
+        hideTypingIndicator();
+        if (statusEl) statusEl.innerText = 'Ошибка соединения';
+        addMessage('assistant', `Не удалось связаться с сервером: ${err.message}. Проверьте настройки подключения.`);
+    }
+}
+
+// Отправка нового сообщения в чат
 async function sendChatMessage() {
     const input = document.getElementById('chatInput');
     const text = input?.value.trim();
@@ -1799,51 +1833,7 @@ async function sendChatMessage() {
 
     input.value = '';
     addMessage('user', text);
-
-    // Показываем что ИИ печатает
-    const statusEl = document.getElementById('aiStatusText');
-    if (statusEl) statusEl.innerText = 'Думает...';
-    showTypingIndicator();
-
-    try {
-        // Отправляем историю для контекста (последние 10 сообщений)
-        const recentHistory = chatHistory.slice(-10).map(m => ({
-            role: m.role,
-            content: m.content
-        }));
-
-        const result = await sendToAI(text, recentHistory);
-        hideTypingIndicator();
-
-        const rawReply = result.reply || 'Не удалось получить ответ';
-        const { text: replyText, actions } = parseAIResponse(rawReply);
-
-        // Показываем текст ответа
-        addMessage('assistant', replyText || rawReply);
-
-        if (statusEl) statusEl.innerText = 'Готов помочь';
-
-        // Выполняем команды (добавление задач и заметок)
-        const added = executeAIActions(actions);
-        if (added.length > 0) {
-            const lines = added.map(item => {
-                if (item.type === 'task')      return `✅ В план на ${formatDateForUser(item.date)}: "${item.text}"`;
-                if (item.type === 'note')      return `📝 В заметки (${item.folder}): "${item.text}"`;
-                if (item.type === 'microtask') return `🎯 Шаг в цель "${item.goalTitle}": "${item.text}"`;
-                return '';
-            }).filter(Boolean);
-            if (lines.length) addMessage('assistant', lines.join('\n'));
-            document.getElementById('suggestionsZone')?.classList.add('hidden');
-        }
-
-        // Озвучиваем если включён голосовой режим
-        if (isVoiceReplyEnabled) speakText(replyText || rawReply);
-
-    } catch (err) {
-        hideTypingIndicator();
-        if (statusEl) statusEl.innerText = 'Ошибка соединения';
-        addMessage('assistant', `Не удалось связаться с сервером: ${err.message}. Проверьте настройки подключения.`);
-    }
+    await processAIRequest(text);
 }
 
 // Парсим ответ ИИ — извлекаем текст и JSON-команды
