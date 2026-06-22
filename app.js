@@ -1661,16 +1661,28 @@ async function sendChatMessage() {
         const result = await sendToAI(text, recentHistory);
         hideTypingIndicator();
 
-        const reply = result.reply || 'Не удалось получить ответ';
-        addMessage('assistant', reply);
+        const rawReply = result.reply || 'Не удалось получить ответ';
+        const { text: replyText, actions } = parseAIResponse(rawReply);
+
+        // Показываем текст ответа
+        addMessage('assistant', replyText || rawReply);
 
         if (statusEl) statusEl.innerText = 'Готов помочь';
 
-        // Озвучиваем если включён голосовой режим
-        if (isVoiceReplyEnabled) speakText(reply);
+        // Выполняем команды (добавление задач)
+        const added = executeAIActions(actions);
+        if (added.length > 0) {
+            // Показываем подтверждение для каждой добавленной задачи
+            added.forEach(item => {
+                const dateLabel = formatDateForUser(item.date);
+                addMessage('assistant', `✅ Добавила в план на ${dateLabel}: "${item.text}"`);
+            });
+            // Скрываем зону предложений если была
+            document.getElementById('suggestionsZone')?.classList.add('hidden');
+        }
 
-        // Ищем предложения задач в ответе
-        parseSuggestions(reply);
+        // Озвучиваем если включён голосовой режим
+        if (isVoiceReplyEnabled) speakText(replyText || rawReply);
 
     } catch (err) {
         hideTypingIndicator();
@@ -1679,25 +1691,55 @@ async function sendChatMessage() {
     }
 }
 
-// Ищем в ответе ИИ предложения задач (паттерн: строки начинающиеся с •, -, или цифры+точки)
-function parseSuggestions(text) {
-    const lines = text.split('\n');
-    const suggestions = [];
+// Парсим ответ ИИ — извлекаем текст и JSON-команды
+function parseAIResponse(rawReply) {
+    const actionsMatch = rawReply.match(/<ACTIONS>([\s\S]*?)<\/ACTIONS>/);
+    const text = rawReply.replace(/<ACTIONS>[\s\S]*?<\/ACTIONS>/g, '').trim();
+    let actions = [];
 
-    lines.forEach(line => {
-        const cleaned = line.replace(/^[\s•\-\*\d\.]+/, '').trim();
-        if (cleaned.length > 5 && cleaned.length < 100) {
-            const lowerLine = line.toLowerCase();
-            // Ищем строки которые похожи на задачи
-            if (line.match(/^[\s]*[•\-\*]/) || line.match(/^[\s]*\d+[\.\)]/)) {
-                suggestions.push(cleaned);
-            }
+    if (actionsMatch) {
+        try {
+            actions = JSON.parse(actionsMatch[1].trim());
+        } catch (e) {
+            console.warn('Не удалось распарсить ACTIONS:', e);
+        }
+    }
+
+    return { text, actions };
+}
+
+// Выполняем команды от ИИ
+function executeAIActions(actions) {
+    if (!actions || actions.length === 0) return [];
+    const added = [];
+
+    actions.forEach(action => {
+        if (action.type === 'add_task' && action.text) {
+            const date = action.date || activeDate;
+            if (!AppData.tasksByDate[date]) AppData.tasksByDate[date] = [];
+            AppData.tasksByDate[date].push({ id: createId(), text: action.text, done: false });
+            added.push({ text: action.text, date });
         }
     });
 
-    if (suggestions.length > 0) {
-        showSuggestions(suggestions);
+    if (added.length > 0) {
+        saveDb();
+        renderDailyPlan();
+        setupCalendar();
     }
+
+    return added;
+}
+
+// Форматируем дату для отображения пользователю
+function formatDateForUser(dateStr) {
+    const date = parseDateString(dateStr);
+    if (!date) return dateStr;
+    const today = getTodayString();
+    const tomorrow = formatDateLocal(new Date(Date.now() + 86400000));
+    if (dateStr === today) return 'сегодня';
+    if (dateStr === tomorrow) return 'завтра';
+    return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
 }
 
 // Показываем карточки предложений
@@ -1830,15 +1872,15 @@ async function greetUser() {
 
     try {
         const result = await sendToAI(
-            'Поздоровайся и кратко проанализируй мои текущие цели и план на сегодня. Если есть задачи на сегодня — похвали за активность. Если плана нет — предложи 2-3 конкретных шага по ближайшей цели с дедлайном. Будь краткой и дружелюбной.',
+            'Поздоровайся и кратко проанализируй мои текущие цели и план на сегодня. Если есть задачи на сегодня — похвали за активность. Если плана нет — предложи 2-3 конкретных шага по ближайшей цели с дедлайном. Будь краткой и дружелюбной. Не добавляй задачи сама — только предлагай.',
             []
         );
         hideTypingIndicator();
-        const reply = result.reply || 'Привет! Готова помочь с планированием.';
-        addMessage('assistant', reply);
+        const rawReply = result.reply || 'Привет! Готова помочь с планированием.';
+        const { text: replyText } = parseAIResponse(rawReply);
+        addMessage('assistant', replyText || rawReply);
         if (statusEl) statusEl.innerText = 'Готов помочь';
-        if (isVoiceReplyEnabled) speakText(reply);
-        parseSuggestions(reply);
+        if (isVoiceReplyEnabled) speakText(replyText || rawReply);
     } catch {
         hideTypingIndicator();
         addMessage('assistant', 'Привет! 👋 Готова помочь с планированием. Что делаем сегодня?');
