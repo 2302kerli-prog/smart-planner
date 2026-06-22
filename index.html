@@ -54,14 +54,21 @@
         <!-- БЛОК: ПЛАН ДНЯ -->
         <div id="dailyPlanBlock" class="glass-panel w-full flex-1 flex flex-col p-5 overflow-hidden relative transition-all duration-300">
             <div class="flex justify-between items-center mb-3 shrink-0">
-                <div class="w-6"></div>
-                <div class="text-center">
-                    <h1 id="activeDateTitle" class="text-xl font-bold text-gray-600">Среда 18.06</h1>
+                <button onclick="navigateDay(-1)" class="text-gray-600 active:scale-75 hover:text-gray-900 transition-colors p-1">
+                    <i data-lucide="chevron-left" class="w-6 h-6"></i>
+                </button>
+                <div class="text-center cursor-pointer" onclick="openPanel('calendarPanel')">
+                    <h1 id="activeDateTitle" class="text-xl font-bold text-gray-600 hover:text-gray-900 transition-colors">Среда 18.06</h1>
                     <h2 class="text-3xl font-bold text-gray-900 handwriting text-center">План дня:</h2>
                 </div>
-                <button onclick="togglePlanFullscreen()" class="text-gray-600 active:scale-75 hover:text-gray-900 transition-colors">
-                    <i id="fullscreenIcon" data-lucide="maximize-2" class="w-6 h-6"></i>
-                </button>
+                <div class="flex items-center gap-1">
+                    <button onclick="navigateDay(1)" class="text-gray-600 active:scale-75 hover:text-gray-900 transition-colors p-1">
+                        <i data-lucide="chevron-right" class="w-6 h-6"></i>
+                    </button>
+                    <button onclick="togglePlanFullscreen()" class="text-gray-600 active:scale-75 hover:text-gray-900 transition-colors">
+                        <i id="fullscreenIcon" data-lucide="maximize-2" class="w-6 h-6"></i>
+                    </button>
+                </div>
             </div>
 
             <!-- Список задач -->
