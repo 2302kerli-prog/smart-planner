@@ -34,9 +34,25 @@ function getTodayString() {
 let selectedGoalId = null;
 
 /* ==============================================
+   ПРОФИЛИ ПОЛЬЗОВАТЕЛЕЙ
+   ============================================== */
+const PROFILES_KEY       = 'smart_planner_profiles';
+const ACTIVE_PROFILE_KEY = 'smart_planner_active_profile';
+
+function loadProfiles()         { try { return JSON.parse(localStorage.getItem(PROFILES_KEY) || '[]'); } catch { return []; } }
+function saveProfiles(p)        { localStorage.setItem(PROFILES_KEY, JSON.stringify(p)); }
+function getActiveProfileId()   { return localStorage.getItem(ACTIVE_PROFILE_KEY) || ''; }
+function setActiveProfileId(id) { localStorage.setItem(ACTIVE_PROFILE_KEY, id); }
+
+function applyActiveProfile() {
+    const pid = getActiveProfileId();
+    STORAGE_KEY = pid ? `smart_planner_db_${pid}` : 'smart_planner_db';
+}
+
+/* ==============================================
    БАЗА ДАННЫХ В LOCALSTORAGE
    ============================================== */
-const STORAGE_KEY = 'smart_planner_db';
+let STORAGE_KEY = 'smart_planner_db'; // обновляется через applyActiveProfile()
 
 const DEFAULT_DATA = {
     settings: {
@@ -92,12 +108,15 @@ function normalizeAppData(data) {
     return normalized;
 }
 
-let AppData;
-try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    AppData = saved ? normalizeAppData(JSON.parse(saved)) : normalizeAppData(JSON.parse(JSON.stringify(DEFAULT_DATA)));
-} catch {
-    AppData = normalizeAppData(JSON.parse(JSON.stringify(DEFAULT_DATA)));
+let AppData = null;
+
+function loadAppData() {
+    try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        AppData = saved ? normalizeAppData(JSON.parse(saved)) : normalizeAppData(JSON.parse(JSON.stringify(DEFAULT_DATA)));
+    } catch {
+        AppData = normalizeAppData(JSON.parse(JSON.stringify(DEFAULT_DATA)));
+    }
 }
 
 function saveDb() {
@@ -108,7 +127,7 @@ function saveDb() {
    СОСТОЯНИЕ ПРИЛОЖЕНИЯ
    ============================================== */
 let activeDate = getTodayString();
-let currentFolderId = AppData.notesFolders[0]?.id || '';
+let currentFolderId = '';
 let currentMediaTab = 'books';
 let activeNoteId = null;
 let draggedItem = null;
@@ -129,8 +148,10 @@ const monthNames = [
 /* ==============================================
    ИНИЦИАЛИЗАЦИЯ
    ============================================== */
-window.addEventListener('DOMContentLoaded', () => {
-    lucide.createIcons();
+function initApp() {
+    applyActiveProfile();
+    loadAppData();
+    currentFolderId = AppData.notesFolders[0]?.id || '';
     applyInitialSettings();
     renderGoalsWidget();
     renderDailyPlan();
@@ -141,6 +162,32 @@ window.addEventListener('DOMContentLoaded', () => {
     initHoldButton();
     setupKeyboardListeners();
     setupBubbleInteraction();
+    updateProfileDisplay();
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+    lucide.createIcons();
+
+    const profiles = loadProfiles();
+
+    if (profiles.length === 0) {
+        // Проверяем: есть ли старые данные без профилей → мигрируем
+        const legacyData = localStorage.getItem('smart_planner_db');
+        if (legacyData) {
+            const defaultProfile = { id: `p_${createId()}`, name: 'Я', emoji: '👤' };
+            saveProfiles([defaultProfile]);
+            setActiveProfileId(defaultProfile.id);
+            localStorage.setItem(`smart_planner_db_${defaultProfile.id}`, legacyData);
+            localStorage.removeItem('smart_planner_db');
+            initApp();
+        } else {
+            // Первый запуск — показываем создание профиля
+            showProfileCreation(true);
+        }
+    } else {
+        if (!getActiveProfileId()) setActiveProfileId(profiles[0].id);
+        initApp();
+    }
 });
 
 function setupKeyboardListeners() {
@@ -155,6 +202,9 @@ function setupKeyboardListeners() {
     });
     document.getElementById('aiTaskInput').addEventListener('keydown', (e) => {
         if (e.key === 'Enter') sendAiRequest();
+    });
+    document.getElementById('profileNameInput')?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') confirmCreateProfile();
     });
 }
 
@@ -2043,3 +2093,152 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.key === 'Enter') sendChatMessage();
     });
 });
+
+/* ==============================================
+   УПРАВЛЕНИЕ ПРОФИЛЯМИ ПОЛЬЗОВАТЕЛЕЙ
+   ============================================== */
+const PROFILE_EMOJIS = ['👩','👨','👧','👦','👵','👴','🧑','🐱','🦊','🌸','⭐','🎯','🌙','🎀','🎵'];
+let selectedProfileEmoji = PROFILE_EMOJIS[0];
+let isFirstTimeProfile    = false;
+
+function updateProfileDisplay() {
+    const profiles = loadProfiles();
+    const pid      = getActiveProfileId();
+    const profile  = profiles.find(p => p.id === pid);
+    if (!profile) return;
+    const emojiEl = document.getElementById('currentProfileEmoji');
+    const nameEl  = document.getElementById('currentProfileName');
+    const topEl   = document.getElementById('topProfileEmoji');
+    if (emojiEl) emojiEl.innerText = profile.emoji;
+    if (nameEl)  nameEl.innerText  = profile.name;
+    if (topEl)   topEl.innerText   = profile.emoji;
+}
+
+function showProfileSelector() {
+    const profiles = loadProfiles();
+    const pid      = getActiveProfileId();
+    const list     = document.getElementById('profileList');
+    list.innerHTML = '';
+
+    profiles.forEach(p => {
+        const card = document.createElement('div');
+        card.className = `profile-card ${p.id === pid ? 'active-profile' : ''}`;
+        card.innerHTML = `
+            <div class="text-4xl mb-1">${p.emoji}</div>
+            <div class="font-bold text-gray-800 text-xs truncate leading-snug">${escapeHtml(p.name)}</div>
+            ${profiles.length > 1 ? `<button class="js-del-profile mt-1 text-[10px] text-red-400 active:scale-75 leading-none">✕</button>` : ''}
+        `;
+        card.addEventListener('click', (e) => {
+            if (e.target.classList.contains('js-del-profile')) return;
+            switchToProfile(p.id);
+        });
+        card.querySelector('.js-del-profile')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            confirmDeleteProfile(p.id);
+        });
+        list.appendChild(card);
+    });
+
+    document.getElementById('profileSelectorModal').classList.remove('hidden');
+}
+
+function closeProfileSelector() {
+    document.getElementById('profileSelectorModal').classList.add('hidden');
+}
+
+function switchToProfile(profileId) {
+    if (profileId === getActiveProfileId()) { closeProfileSelector(); return; }
+    closeProfileSelector();
+    setActiveProfileId(profileId);
+    applyActiveProfile();
+    loadAppData();
+    currentFolderId = AppData.notesFolders[0]?.id || '';
+    applyInitialSettings();
+    renderGoalsWidget();
+    renderDailyPlan();
+    setupCalendar();
+    renderFolders();
+    renderNotes();
+    renderMedia();
+    updateProfileDisplay();
+    // Перезагружаем историю чата для нового профиля
+    loadChatHistory();
+}
+
+function showProfileCreation(firstTime = false) {
+    isFirstTimeProfile    = firstTime;
+    selectedProfileEmoji  = PROFILE_EMOJIS[0];
+
+    const cancelBtn = document.getElementById('profileCreationCancelBtn');
+    if (cancelBtn) cancelBtn.classList.toggle('hidden', firstTime);
+
+    const picker = document.getElementById('emojiPicker');
+    picker.innerHTML = '';
+    PROFILE_EMOJIS.forEach(emoji => {
+        const btn = document.createElement('div');
+        btn.className = `emoji-option ${emoji === selectedProfileEmoji ? 'selected' : ''}`;
+        btn.innerText = emoji;
+        btn.addEventListener('click', () => {
+            selectedProfileEmoji = emoji;
+            picker.querySelectorAll('.emoji-option').forEach(el => el.classList.remove('selected'));
+            btn.classList.add('selected');
+        });
+        picker.appendChild(btn);
+    });
+
+    document.getElementById('profileNameInput').value = '';
+    document.getElementById('profileCreationModal').classList.remove('hidden');
+    setTimeout(() => document.getElementById('profileNameInput').focus(), 100);
+}
+
+function cancelProfileCreation() {
+    document.getElementById('profileCreationModal').classList.add('hidden');
+    if (!isFirstTimeProfile) showProfileSelector();
+}
+
+function confirmCreateProfile() {
+    const name = document.getElementById('profileNameInput').value.trim();
+    if (!name) {
+        const el = document.getElementById('profileNameInput');
+        el.classList.add('voice-listening');
+        setTimeout(() => el.classList.remove('voice-listening'), 450);
+        return;
+    }
+    const profiles   = loadProfiles();
+    const newProfile = { id: `p_${createId()}`, name, emoji: selectedProfileEmoji };
+    profiles.push(newProfile);
+    saveProfiles(profiles);
+    document.getElementById('profileCreationModal').classList.add('hidden');
+    setActiveProfileId(newProfile.id);
+
+    if (isFirstTimeProfile) {
+        initApp();
+    } else {
+        switchToProfile(newProfile.id);
+    }
+}
+
+function confirmDeleteProfile(profileId) {
+    const profiles = loadProfiles();
+    const profile  = profiles.find(p => p.id === profileId);
+    if (!profile) return;
+    showAppDialog({
+        title: 'Удалить профиль?',
+        message: `Все данные профиля "${profile.name}" будут удалены без возможности восстановления.`,
+        confirmText: 'Удалить',
+        danger: true,
+        onConfirm: () => {
+            const updated = profiles.filter(p => p.id !== profileId);
+            saveProfiles(updated);
+            localStorage.removeItem(`smart_planner_db_${profileId}`);
+            localStorage.removeItem(`smart_planner_chat_${profileId}`);
+            if (profileId === getActiveProfileId() && updated.length > 0) {
+                setActiveProfileId(updated[0].id);
+                switchToProfile(updated[0].id);
+            } else {
+                closeProfileSelector();
+                if (updated.length > 0) showProfileSelector();
+            }
+        }
+    });
+}

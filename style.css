@@ -437,3 +437,53 @@ button, i[data-lucide], .drag-handle, .mic-btn, .circle-check {
     0%, 60%, 100% { transform: translateY(0); }
     30% { transform: translateY(-6px); }
 }
+
+/* ==============================================
+   ПРОФИЛИ ПОЛЬЗОВАТЕЛЕЙ
+   ============================================== */
+.profile-card {
+    background: rgba(255, 255, 255, 0.5);
+    border: 2px solid rgba(255, 255, 255, 0.7);
+    border-radius: 16px;
+    padding: 12px 6px;
+    cursor: pointer;
+    transition: all 0.18s;
+    text-align: center;
+}
+.profile-card:active { transform: scale(0.93); }
+.profile-card.active-profile {
+    border-color: #2dd4bf;
+    background: rgba(45, 212, 191, 0.15);
+    box-shadow: 0 0 0 2px rgba(45, 212, 191, 0.3);
+}
+.dark-glass .profile-card {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+.dark-glass .profile-card.active-profile {
+    background: rgba(45, 212, 191, 0.2);
+    border-color: #2dd4bf;
+}
+
+.emoji-option {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: all 0.15s;
+    background: rgba(255, 255, 255, 0.4);
+    user-select: none;
+    -webkit-user-select: none;
+}
+.emoji-option:hover  { background: rgba(255, 255, 255, 0.7); }
+.emoji-option:active { transform: scale(0.88); }
+.emoji-option.selected {
+    border-color: #2dd4bf;
+    background: rgba(45, 212, 191, 0.2);
+    box-shadow: 0 0 0 2px rgba(45, 212, 191, 0.25);
+}
