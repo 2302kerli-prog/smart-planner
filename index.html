@@ -570,7 +570,11 @@
     <!-- ЭКРАН ВЫБОРА ПРОФИЛЯ -->
     <div id="profileSelectorModal" class="hidden absolute inset-0 z-[300] flex flex-col items-center justify-center bg-black/30 backdrop-blur-md px-6">
         <div class="glass-panel w-full max-w-sm p-6 text-center">
-            <h2 class="text-3xl font-bold text-gray-800 handwriting mb-1">Кто планирует?</h2>
+            <div class="flex justify-between items-center mb-1">
+                <div class="w-8"></div>
+                <h2 class="text-3xl font-bold text-gray-800 handwriting">Кто планирует?</h2>
+                <i data-lucide="x" class="w-8 h-8 cursor-pointer text-gray-500 active:scale-75" onclick="closeProfileSelector()"></i>
+            </div>
             <p class="text-sm text-gray-500 mb-5">Выберите свой профиль</p>
             <div id="profileList" class="grid grid-cols-3 gap-3 mb-5">
                 <!-- Профили рендерятся через JS -->

@@ -2273,12 +2273,11 @@ function updateProfileDisplay() {
     const pid      = getActiveProfileId();
     const profile  = profiles.find(p => p.id === pid);
     if (!profile) return;
-    const emojiEl = document.getElementById('currentProfileEmoji');
-    const nameEl  = document.getElementById('currentProfileName');
-    const topEl   = document.getElementById('topProfileEmoji');
-    if (emojiEl) emojiEl.innerText = profile.emoji;
-    if (nameEl)  nameEl.innerText  = profile.name;
-    if (topEl)   topEl.innerText   = profile.emoji;
+    // Обновляем отображение активного профиля в панели профиля
+    const upEmoji = document.getElementById('upEmoji');
+    const upName  = document.getElementById('upName');
+    if (upEmoji) upEmoji.innerText = profile.emoji;
+    if (upName)  upName.innerText  = profile.name;
 }
 
 function showProfileSelector() {
