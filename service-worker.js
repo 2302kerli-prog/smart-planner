@@ -4,13 +4,17 @@
 //  Получает push-уведомления от сервера и показывает их.
 // ============================================================
 
-const CACHE_NAME = 'smart-planner-v1';
+const CACHE_NAME = 'smart-planner-v2';
+// Используем BASE чтобы правильно работать на GitHub Pages (/smart-planner/)
+// и на любом другом хостинге одновременно
+const BASE = new URL('./', self.location).href;
 const ASSETS_TO_CACHE = [
-    '/',
-    '/index.html',
-    '/style.css',
-    '/app.js',
-    '/service-worker.js'
+    BASE,
+    BASE + 'index.html',
+    BASE + 'style.css',
+    BASE + 'app.js',
+    BASE + 'server-api.js',
+    BASE + 'manifest.json',
 ];
 
 // ── Установка: кешируем файлы приложения ──────────────────────
