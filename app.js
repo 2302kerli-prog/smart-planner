@@ -601,7 +601,7 @@ function openTaskActions(event, taskId) {
         </button>
     `;
     document.body.appendChild(menu);
-    lucide.createIcons({ nodes: [menu] });
+    lucide.createIcons();
 
     setTimeout(() => {
         document.addEventListener('click', function closeMenu(e) {
