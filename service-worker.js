@@ -78,12 +78,12 @@ self.addEventListener('push', (event) => {
 
     const options = {
         body: data.body,
-        icon: data.icon || '/icon-192.png',
-        badge: data.badge || '/icon-72.png',
+        icon: data.icon || '/smart-planner/icon-192.png',
+        badge: data.badge || '/smart-planner/icon-72.png',
         vibrate: [200, 100, 200],
         data: data.data || {},
         actions: data.actions || [],
-        requireInteraction: false,
+        requireInteraction: true,
         tag: data.tag || 'smart-planner-notification'
     };
 
