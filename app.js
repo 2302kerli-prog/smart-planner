@@ -446,17 +446,22 @@ function startVoiceInput(targetId, onDone) {
         r.lang            = 'ru-RU';
         r.interimResults  = true;
         r.maxAlternatives = 1;
-        r.continuous      = true;  // не останавливаться на паузах
+        r.continuous      = true;
 
-        target.classList.add('voice-listening');
         setMicVisual(targetId, true);
+
+        // Собственный счётчик обработанных результатов — event.resultIndex
+        // ненадёжен в Safari/iOS и может возвращать 0 на каждом событии,
+        // что приводит к дублированию финализированного текста.
+        let processedIndex = 0;
 
         r.onresult = (event) => {
             let interim = '';
-            for (let i = event.resultIndex; i < event.results.length; i++) {
+            for (let i = processedIndex; i < event.results.length; i++) {
                 const t = event.results[i][0].transcript;
                 if (event.results[i].isFinal) {
                     finalText += (finalText ? ' ' : '') + t;
+                    processedIndex = i + 1;
                 } else {
                     interim += t;
                 }
@@ -470,27 +475,22 @@ function startVoiceInput(targetId, onDone) {
         r.onerror = (e) => {
             if (e.error === 'no-speech' || e.error === 'aborted') return;
             setMicVisual(targetId, false);
-            target.classList.remove('voice-listening');
             voiceTargetId     = null;
             activeRecognition = null;
         };
 
         r.onend = () => {
-            // Если остановили вручную — завершаем
             if (r._manualStop || voiceTargetId !== targetId) {
-                target.classList.remove('voice-listening');
                 setMicVisual(targetId, false);
                 voiceTargetId     = null;
                 activeRecognition = null;
-                // Финальный текст с пунктуацией
                 const sep = baseText.trim() && finalText ? ' ' : '';
                 target.value = baseText + sep + addAutoPunctuation(finalText);
                 if (target.tagName === 'TEXTAREA') autoResizeTextarea(target);
                 onDone?.(finalText);
             } else {
-                // iOS / браузер прервал сам — перезапускаем автоматически
+                // iOS / браузер прервал — перезапускаем
                 try { createAndStart(); } catch (_) {
-                    target.classList.remove('voice-listening');
                     setMicVisual(targetId, false);
                     voiceTargetId = null;
                 }
@@ -2043,6 +2043,7 @@ async function processAIRequest(text) {
 
 // Отправка нового сообщения в чат
 async function sendChatMessage() {
+    stopVoiceInput();
     const input = document.getElementById('chatInput');
     const text = input?.value.trim();
     if (!text) return;
@@ -2345,6 +2346,7 @@ async function greetUser() {
 // Переопределяем старую функцию отправки ИИ-запроса —
 // теперь она открывает чат вместо модала
 sendAiRequest = function sendAiRequestNew() {
+    stopVoiceInput();
     const input = document.getElementById('aiTaskInput');
     const val = input?.value.trim();
     input && (input.value = '');
