@@ -406,9 +406,10 @@ function setMicVisual(targetId, active) {
     }
 }
 
-function stopVoiceInput() {
+function stopVoiceInput(skipRestore = false) {
     if (activeRecognition) {
         activeRecognition._manualStop = true;
+        if (skipRestore) activeRecognition._skipRestore = true;
         activeRecognition.stop();
     }
 }
@@ -484,10 +485,13 @@ function startVoiceInput(targetId, onDone) {
                 setMicVisual(targetId, false);
                 voiceTargetId     = null;
                 activeRecognition = null;
-                const sep = baseText.trim() && finalText ? ' ' : '';
-                target.value = baseText + sep + addAutoPunctuation(finalText);
-                if (target.tagName === 'TEXTAREA') autoResizeTextarea(target);
-                onDone?.(finalText);
+                // _skipRestore: стоп был вызван через отправку — поле уже очищено, не трогаем
+                if (!r._skipRestore) {
+                    const sep = baseText.trim() && finalText ? ' ' : '';
+                    target.value = baseText + sep + addAutoPunctuation(finalText);
+                    if (target.tagName === 'TEXTAREA') autoResizeTextarea(target);
+                    onDone?.(finalText);
+                }
             } else {
                 // iOS / браузер прервал — перезапускаем
                 try { createAndStart(); } catch (_) {
@@ -2043,7 +2047,7 @@ async function processAIRequest(text) {
 
 // Отправка нового сообщения в чат
 async function sendChatMessage() {
-    stopVoiceInput();
+    stopVoiceInput(true);
     const input = document.getElementById('chatInput');
     const text = input?.value.trim();
     if (!text) return;
@@ -2346,7 +2350,7 @@ async function greetUser() {
 // Переопределяем старую функцию отправки ИИ-запроса —
 // теперь она открывает чат вместо модала
 sendAiRequest = function sendAiRequestNew() {
-    stopVoiceInput();
+    stopVoiceInput(true);
     const input = document.getElementById('aiTaskInput');
     const val = input?.value.trim();
     input && (input.value = '');
