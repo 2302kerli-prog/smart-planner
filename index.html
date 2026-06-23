@@ -45,7 +45,7 @@
             <i data-lucide="user" class="w-8 h-8 cursor-pointer active:scale-90 transition-transform" onclick="openUserProfile()" title="Мой профиль"></i>
             <i data-lucide="clipboard-list" class="w-8 h-8 cursor-pointer active:scale-90 transition-transform" onclick="openPanel('notesPanel')"></i>
             <i data-lucide="book-open" class="w-8 h-8 cursor-pointer active:scale-90 transition-transform" onclick="openPanel('mediaPanel')"></i>
-            <i data-lucide="sparkles" class="w-8 h-8 cursor-pointer active:scale-90 transition-transform" onclick="openAiChat()"></i>
+            <i data-lucide="trophy" class="w-8 h-8 cursor-pointer active:scale-90 transition-transform" onclick="openAchievements()" title="Достижения"></i>
             <i data-lucide="settings" class="w-8 h-8 cursor-pointer active:scale-90 transition-transform" onclick="openPanel('settingsPanel')" title="Настройки"></i>
         </div>
 
@@ -109,11 +109,17 @@
 
         <!-- КНОПКА МИКРОФОНА И ВВОДА ИИ -->
         <div id="aiInputBar" class="absolute bottom-7 left-0 w-full px-6 flex justify-center z-50">
-            <!-- Режим микрофона (Большой) -->
-            <button id="micBtn" class="mic-btn w-14 h-14 rounded-full flex items-center justify-center text-white"
-                    title="Нажмите — голос. Удержите — текстовый ввод">
-                <i data-lucide="mic" class="w-7 h-7 drop-shadow-md"></i>
-            </button>
+            <!-- Режим: два округлых значка — микрофон и ИИ -->
+            <div id="micOnlyBar" class="flex items-center gap-5">
+                <button id="micBtn" class="mic-btn w-14 h-14 rounded-full flex items-center justify-center text-white"
+                        title="Нажмите — голос. Удержите — текстовый ввод">
+                    <i data-lucide="mic" class="w-7 h-7 drop-shadow-md"></i>
+                </button>
+                <button onclick="openAiChat()" class="mic-btn w-14 h-14 rounded-full flex items-center justify-center text-white"
+                        title="ИИ-помощник">
+                    <i data-lucide="sparkles" class="w-7 h-7 drop-shadow-md"></i>
+                </button>
+            </div>
 
             <!-- Интерактивная панель ввода ИИ -->
             <div id="textInputWrapper" class="hidden w-full flex items-end gap-2">
@@ -537,6 +543,38 @@
                         <i data-lucide="send" class="w-5 h-5"></i>
                     </button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ЭКРАН: ДОСТИЖЕНИЯ -->
+    <div id="achievementsPanel" class="slide-panel w-full max-w-md px-4 pb-4">
+        <div class="glass-panel h-full w-full p-5 flex flex-col">
+
+            <!-- Шапка -->
+            <div class="flex justify-between items-center mb-4 shrink-0">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-full bg-yellow-400/30 flex items-center justify-center">
+                        <i data-lucide="trophy" class="w-5 h-5 text-yellow-600"></i>
+                    </div>
+                    <h2 class="text-2xl font-bold text-gray-800 handwriting">Достижения</h2>
+                </div>
+                <i data-lucide="x" class="w-8 h-8 cursor-pointer text-gray-600 active:scale-75" onclick="closePanel('achievementsPanel')"></i>
+            </div>
+
+            <!-- Статистика (рендерится через JS) -->
+            <div class="flex-1 overflow-y-auto space-y-4" id="achievementsContent">
+                <div class="text-center py-12 text-gray-400 text-sm italic">Загрузка...</div>
+            </div>
+
+            <!-- Кнопка оценки от ИИ -->
+            <div class="shrink-0 mt-4 pt-4 border-t border-white/20">
+                <button onclick="generateAISummary()" id="aiSummaryBtn"
+                        class="w-full py-3 glass-panel text-gray-700 font-semibold text-sm flex items-center justify-center gap-2 active:scale-95 transition-transform">
+                    <i data-lucide="sparkles" class="w-5 h-5 text-teal-500"></i>
+                    Получить оценку от ИИ
+                </button>
+                <div id="aiSummaryText" class="hidden mt-3 p-4 glass-panel text-gray-700 text-sm leading-relaxed"></div>
             </div>
         </div>
     </div>

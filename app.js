@@ -1621,13 +1621,15 @@ function closePanel(id) {
    КНОПКА МИКРОФОНА: КОРОТКОЕ НАЖАТИЕ = ГОЛОС, УДЕРЖАНИЕ = ТЕКСТ
    ============================================== */
 function initHoldButton() {
-    const micBtn = document.getElementById('micBtn');
+    const micBtn     = document.getElementById('micBtn');
     const textWrapper = document.getElementById('textInputWrapper');
+    const micOnlyBar  = document.getElementById('micOnlyBar');
     let pressTimer;
     let longPressTriggered = false;
 
     function expandTextInput() {
-        micBtn.classList.add('hidden');
+        micOnlyBar.classList.add('hidden');
+        micOnlyBar.classList.remove('flex');
         textWrapper.classList.remove('hidden');
         textWrapper.classList.add('flex');
         document.getElementById('aiTaskInput').focus();
@@ -1673,10 +1675,11 @@ function initHoldButton() {
 
 function collapseToMicOnly() {
     const textWrapper = document.getElementById('textInputWrapper');
-    const micBtn = document.getElementById('micBtn');
     textWrapper.classList.add('hidden');
     textWrapper.classList.remove('flex');
-    micBtn.classList.remove('hidden');
+    const micOnlyBar = document.getElementById('micOnlyBar');
+    micOnlyBar.classList.remove('hidden');
+    micOnlyBar.classList.add('flex');
 }
 
 /* ==============================================
@@ -2574,4 +2577,186 @@ function saveUserProfile() {
     };
     saveDb();
     closePanel('userProfilePanel');
+}
+
+/* ==============================================
+   ДОСТИЖЕНИЯ
+   ============================================== */
+function openAchievements() {
+    openPanel('achievementsPanel');
+    renderAchievements();
+}
+
+function renderAchievements() {
+    const content = document.getElementById('achievementsContent');
+    if (!content) return;
+
+    const today = typeof activeDate !== 'undefined' ? activeDate : formatDateLocal(new Date());
+
+    // --- Сегодня ---
+    const todayTasks = AppData.tasksByDate[today] || [];
+    const todayDone  = todayTasks.filter(t => t.done).length;
+    const todayTotal = todayTasks.length;
+    const todayPct   = todayTotal > 0 ? Math.round(todayDone / todayTotal * 100) : 0;
+
+    // --- Неделя (последние 7 дней включая сегодня) ---
+    let weekDone = 0, weekTotal = 0, weekActiveDays = 0, weekPerfectDays = 0;
+    for (let i = 0; i < 7; i++) {
+        const d = parseDateString(today) || new Date();
+        d.setDate(d.getDate() - i);
+        const ds    = formatDateLocal(d);
+        const tasks = AppData.tasksByDate[ds] || [];
+        const done  = tasks.filter(t => t.done).length;
+        weekDone  += done;
+        weekTotal += tasks.length;
+        if (done > 0) weekActiveDays++;
+        if (tasks.length > 0 && done === tasks.length) weekPerfectDays++;
+    }
+    const weekAvgPct = weekTotal > 0 ? Math.round(weekDone / weekTotal * 100) : 0;
+
+    // --- Серия (streak) ---
+    let streak = 0;
+    for (let i = 0; i < 60; i++) {
+        const d = parseDateString(today) || new Date();
+        d.setDate(d.getDate() - i);
+        const tasks = AppData.tasksByDate[formatDateLocal(d)] || [];
+        if (tasks.some(t => t.done)) streak++;
+        else break;
+    }
+
+    // --- Мотивационное сообщение на сегодня ---
+    let todayMsg;
+    if (todayTotal === 0)       todayMsg = 'Добавьте задачи в план, чтобы отслеживать прогресс.';
+    else if (todayPct === 100)  todayMsg = 'Вы выполнили все задачи на сегодня! Потрясающе! 🎉';
+    else if (todayPct >= 75)    todayMsg = 'Отличная работа! Совсем чуть-чуть осталось до идеального дня!';
+    else if (todayPct >= 50)    todayMsg = 'Вы на правильном пути — больше половины уже сделано!';
+    else if (todayPct > 0)      todayMsg = 'Хорошее начало! Есть ещё время выполнить остальные задачи.';
+    else                        todayMsg = 'Ещё ни одной задачи не выполнено — самое время начать!';
+
+    // --- Значки ---
+    const badges = [];
+    if (todayTotal > 0 && todayPct === 100)  badges.push({ e: '🌟', t: 'Идеальный день — все задачи выполнены!' });
+    if (streak >= 30)   badges.push({ e: '💎', t: `${streak} дней подряд — вы легенда!` });
+    else if (streak >= 14) badges.push({ e: '🔥', t: `${streak} дней подряд — невероятно!` });
+    else if (streak >= 7)  badges.push({ e: '⚡', t: `${streak} дней подряд — отлично!` });
+    else if (streak >= 3)  badges.push({ e: '✨', t: `${streak} дня подряд — хорошее начало!` });
+    if (weekPerfectDays >= 5) badges.push({ e: '🏆', t: `${weekPerfectDays} идеальных дней за неделю!` });
+    if (weekDone >= 30) badges.push({ e: '🚀', t: 'Суперпродуктивная неделя — 30+ задач!' });
+    else if (weekDone >= 15) badges.push({ e: '💪', t: `${weekDone} задач за неделю — молодец!` });
+
+    const pluralDays = (n) => n === 1 ? 'день' : n < 5 ? 'дня' : 'дней';
+
+    content.innerHTML = `
+        <div class="glass-panel p-4">
+            <div class="flex items-center gap-2 mb-3">
+                <span class="text-xl">📅</span>
+                <h3 class="font-bold text-gray-800">Сегодня</h3>
+            </div>
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-sm text-gray-600">Выполнено задач</span>
+                <span class="font-bold text-gray-800">${todayDone} / ${todayTotal}</span>
+            </div>
+            <div class="w-full bg-white/40 rounded-full h-2 mb-3 overflow-hidden">
+                <div class="h-2 rounded-full transition-all duration-500" style="width:${todayPct}%; background: linear-gradient(90deg, #14b8a6, #06b6d4)"></div>
+            </div>
+            <p class="text-sm text-gray-600 italic">${todayMsg}</p>
+        </div>
+
+        <div class="glass-panel p-4">
+            <div class="flex items-center gap-2 mb-3">
+                <span class="text-xl">📊</span>
+                <h3 class="font-bold text-gray-800">Эта неделя</h3>
+            </div>
+            <div class="grid grid-cols-3 gap-3 text-center">
+                <div class="glass-panel p-2">
+                    <div class="text-2xl font-bold text-gray-800">${weekDone}</div>
+                    <div class="text-xs text-gray-500 mt-1">задач выполнено</div>
+                </div>
+                <div class="glass-panel p-2">
+                    <div class="text-2xl font-bold text-gray-800">${weekActiveDays}</div>
+                    <div class="text-xs text-gray-500 mt-1">активных ${pluralDays(weekActiveDays)}</div>
+                </div>
+                <div class="glass-panel p-2">
+                    <div class="text-2xl font-bold text-gray-800">${weekAvgPct}%</div>
+                    <div class="text-xs text-gray-500 mt-1">средний %</div>
+                </div>
+            </div>
+        </div>
+
+        ${streak > 0 ? `
+        <div class="glass-panel p-4">
+            <div class="flex items-center gap-2 mb-2">
+                <span class="text-xl">🔥</span>
+                <h3 class="font-bold text-gray-800">Серия активности</h3>
+            </div>
+            <p class="text-sm text-gray-600">Вы выполняете задачи <strong>${streak} ${pluralDays(streak)} подряд</strong>${streak >= 7 ? ' — это невероятно!' : streak >= 3 ? ' — продолжайте!' : '.'}</p>
+        </div>` : ''}
+
+        ${badges.length > 0 ? `
+        <div class="glass-panel p-4">
+            <div class="flex items-center gap-2 mb-3">
+                <span class="text-xl">🎖️</span>
+                <h3 class="font-bold text-gray-800">Заработанные награды</h3>
+            </div>
+            <div class="space-y-2">
+                ${badges.map(b => `
+                <div class="flex items-center gap-3 p-2 bg-white/30 rounded-xl">
+                    <span class="text-2xl">${b.e}</span>
+                    <span class="text-sm font-medium text-gray-700">${b.t}</span>
+                </div>`).join('')}
+            </div>
+        </div>` : ''}
+    `;
+
+    // Сброс кнопки ИИ-оценки
+    const summaryBtn = document.getElementById('aiSummaryBtn');
+    const summaryText = document.getElementById('aiSummaryText');
+    if (summaryBtn) {
+        summaryBtn.disabled = false;
+        summaryBtn.innerHTML = '<i data-lucide="sparkles" class="w-5 h-5 text-teal-500"></i> Получить оценку от ИИ';
+    }
+    if (summaryText) summaryText.classList.add('hidden');
+    lucide.createIcons();
+}
+
+async function generateAISummary() {
+    const btn  = document.getElementById('aiSummaryBtn');
+    const text = document.getElementById('aiSummaryText');
+    if (!btn) return;
+
+    btn.disabled = true;
+    btn.innerHTML = '<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i> Думаю...';
+    lucide.createIcons();
+
+    const today = typeof activeDate !== 'undefined' ? activeDate : formatDateLocal(new Date());
+    const todayTasks = AppData.tasksByDate[today] || [];
+    const todayDone  = todayTasks.filter(t => t.done).length;
+    const todayTotal = todayTasks.length;
+
+    let weekDone = 0, weekTotal = 0;
+    for (let i = 0; i < 7; i++) {
+        const d = parseDateString(today) || new Date();
+        d.setDate(d.getDate() - i);
+        const tasks = AppData.tasksByDate[formatDateLocal(d)] || [];
+        weekDone  += tasks.filter(t => t.done).length;
+        weekTotal += tasks.length;
+    }
+
+    const goalsText = (AppData.goals || []).map(g => `${g.title}: ${g.progress}%`).join('; ') || 'не заданы';
+
+    try {
+        const result = await sendToAI(
+            `Ты личный коуч. Дай короткую (2-3 предложения) вдохновляющую обратную связь на основе моей статистики: сегодня выполнено ${todayDone} из ${todayTotal} задач, за неделю — ${weekDone} из ${weekTotal}. Цели: ${goalsText}. Будь искренним, тёплым и конкретным.`
+        );
+        const { text: reply } = parseAIResponse(result.reply || '');
+        if (text) {
+            text.textContent = reply || 'Отличная работа! Продолжай двигаться вперёд!';
+            text.classList.remove('hidden');
+        }
+        btn.innerHTML = '<i data-lucide="check" class="w-5 h-5 text-green-500"></i> Оценка получена';
+    } catch {
+        btn.disabled = false;
+        btn.innerHTML = '<i data-lucide="sparkles" class="w-5 h-5 text-teal-500"></i> Получить оценку от ИИ';
+    }
+    lucide.createIcons();
 }
